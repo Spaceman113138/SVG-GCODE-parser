@@ -176,6 +176,8 @@ def parseSVG(pathToFile: str):
         match firstWord:
             case "path":
                 lines.extend(parsePath(group))
+            case "polygon":
+                lines.extend(parsePolygon(group))
 
     gcode = parseLinesIntoGcode(lines)
     print(gcode)
@@ -445,6 +447,20 @@ def parsePath(pathString: str):
                 pass
 
     return lines
+
+
+def parsePolygon(pathString: str):
+    onlyPoints = pathString.split("points=\"")[1]
+    onlyPoints = onlyPoints.strip().removesuffix('"/>').strip()
+    finalPoints = fixWeirdSVGrules(onlyPoints).split()
+    print(["Polygon", finalPoints])
+
+    line = []
+    line.append([float(finalPoints[-2]), float(finalPoints[-1])])
+    while len(finalPoints) > 0:
+        line.append([float(finalPoints.pop(0)), float(finalPoints.pop(0))])
+    print(line)
+    return [line]
 
 
 def parseLinesIntoGcode(lines: list[list[list]]):
