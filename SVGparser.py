@@ -61,14 +61,21 @@ def fixWeirdSVGrules(string: str):
         i += 1
 
     #Turn #.12.12# -> #.12 .12#
+
     i = 0
+    hasMetPeriod = False
     while i < len(string):
         char = string[i]
-        if char == "." and not (not string[i-1].isalnum() or not string[i-2].isalnum()):
-            half = string[0:i]
-            half2 = string[i:]
-            string = f"{half} {half2}"
-            i += 1
+        if char == ".":
+            if hasMetPeriod:
+                half = string[0:i]
+                half2 = string[i:]
+                string = f"{half} {half2}"
+                i += 1
+            hasMetPeriod = True
+        elif char == " ":
+            hasMetPeriod = False
+        
         i += 1
 
     return string
@@ -128,6 +135,8 @@ def parsePath(pathString: str):
             currentCommand: list = [thing, ""]
         else:
             currentCommand[1] = currentCommand[1] + thing
+
+    commands.append(currentCommand)
 
     lines = [] #Holds all lines to be drawn
     currentLine = [] #A list of points that makes up a line to be drawn
@@ -189,19 +198,20 @@ def parsePath(pathString: str):
                     currentPoint = nextPoint
 
             case "C":
-                s = currentPoint
-                c1 = [float(value.pop(0)), float(value.pop(0))]
-                c2 = [float(value.pop(0)), float(value.pop(0))]
-                e = [float(value.pop(0)), float(value.pop(0))]
+                while len(value) > 0:
+                    s = currentPoint.copy()
+                    c1 = [float(value.pop(0)), float(value.pop(0))]
+                    c2 = [float(value.pop(0)), float(value.pop(0))]
+                    e = [float(value.pop(0)), float(value.pop(0))]
+                    currentPoint = e.copy()
 
-                t = 0
-                while t <= 1:
-                    x = (pow(1-t, 3) * s[0]) + (3 * pow(1-t, 2) * t * c1[0]) + (3 * pow(1-t, 2) * t * t * c2[0]) + (pow(t, 3) * e[0])
-                    y = (pow(1-t, 3) * s[1]) + (3 * pow(1-t, 2) * t * c1[1]) + (3 * pow(1-t, 2) * t * t * c2[1]) + (pow(t, 3) * e[1])
-                    nextPoint = [x,y]
-                    currentLine.append(nextPoint)
-                    currentPoint = nextPoint
-                    t += .1
+                    t = 0
+                    while t <= 1:
+                        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
+                        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
+                        nextPoint = [x,y]
+                        currentLine.append(nextPoint)
+                        t += .1
 
             case "c":
                 s = currentPoint
@@ -218,7 +228,7 @@ def parsePath(pathString: str):
                     currentPoint = nextPoint
                     t += .1
 
-            case "Z":
+            case "Z" | "z":
                 currentLine.append(currentStartPoint)
                 lines.append(currentLine)
 
