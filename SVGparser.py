@@ -231,17 +231,19 @@ def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
             continue
         match firstWord:
             case "path":
-                lines.extend(parsePath(group))
+                lines.extend(parsePath(pathStringToCommands(group)))
             case "polygon":
                 lines.extend(parsePolygon(group))
+            case "rect":
+                lines.extend(parseRectangle(group))
 
-    adjustScalePosition(desiredSize, desiredCenter, lines)
+    #adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
     print(gcode)
     return gcode
 
 
-def parsePath(pathString: str):
+def pathStringToCommands(pathString: str):
     #Grab the actual path data and turn it into a format that is easy to parse
     index = pathString.index("d=") + 2
     newString = pathString[index:]
@@ -263,6 +265,12 @@ def parsePath(pathString: str):
             currentCommand[1] = currentCommand[1] + thing
 
     commands.append(currentCommand)
+
+    return commands
+
+
+def parsePath(commands: list):
+    currentCommand = ""
 
     lines = [] #Holds all lines to be drawn
     currentLine = [] #A list of points that makes up a line to be drawn
@@ -485,6 +493,70 @@ def parsePolygon(pathString: str):
         line.append([float(finalPoints.pop(0)), float(finalPoints.pop(0))])
     print(line)
     return [line]
+
+
+def parseRectangle(pathString: str):
+    print(pathString)
+    x = 0
+    y = 0
+    width = 0
+    height = 0
+    rx = -1
+    ry = -1
+
+    splitString = pathString.split()
+    for param in splitString:
+        try:
+            index = param.index("=")
+            key = param[0:index]
+            match key:
+                case "x":
+                    x = float(param.split('"')[1])
+                case "y":
+                    y = float(param.split('"')[1])
+                case "width":
+                    width = float(param.split('"')[1])
+                case "height":
+                    height = float(param.split('"')[1])
+                case "rx":
+                    rx = float(param.split('"')[1])
+                case "ry":
+                    ry = float(param.split('"')[1])
+        except:
+            pass
+
+    #Handle rx or ry not being provided or being not possible
+    if rx == -1 and ry == -1:
+        rx,ry = 0,0
+    elif ry == -1:
+        ry = rx
+    elif rx == -1:
+        rx = ry
+
+    if rx > width/2:
+        rx = width/2
+    if ry > height/2:
+        ry = height/2
+
+    #convert to path because it makes it easier
+    commandList = [
+        ["M", [x+rx, y]],
+        ["H", [x+width-rx]],
+        ["V", [y+height-ry]],
+        ["H", [x+rx]],
+        ["V", [y+ry]],
+        ["Z", ""]
+    ]
+
+    if rx > 0 and ry > 0:
+        commandList.insert(2, ["A", [rx, ry, "0", "0", "1", x+width, y+ry]])
+        commandList.insert(4, ["A", [rx, ry, "0", "0", "1", x+width-rx, y+height]])
+        commandList.insert(6, ["A", [rx, ry, "0", "0", "1", x, y+height-ry]])
+        commandList.insert(8, ["A", [rx, ry, "0", "0", "1", x+rx, y]])
+
+    print(x,y,width,height)
+    line = parsePath(commandList)
+    return line
 
 
 def parseLinesIntoGcode(lines: list[list[list]]):
