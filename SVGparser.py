@@ -36,6 +36,40 @@ def lerp(t, v1, v2):
     return (1 - t) * v1 + t * v2
 
 
+def aproxLenCubic(s, c1, c2, e):
+    lastPoint = s
+    length = 0.0
+    t = 0.01
+    while t <= 1:
+        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
+        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
+        nextPoint = [x,y]
+        length += math.dist(nextPoint, lastPoint)
+        lastPoint = nextPoint.copy()
+        t += .01
+
+    return length
+
+
+def aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers):
+    length = 0
+    initX = radii[0] * math.cos(startAngle) * math.cos(xRotate) - radii[1] * math.sin(startAngle) * math.sin(xRotate) + centers[0]
+    initY = radii[0] * math.cos(startAngle) * math.sin(xRotate) + radii[1] * math.sin(startAngle) * math.cos(xRotate) + centers[1]
+    lastPoint = [initX, initY]
+    t = 0
+    while t <= 1:
+        angle = lerp(clamp(0, 1.0, t), 0, deltaAngle) + startAngle
+        x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
+        y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
+        newPoint = [x,y]
+        length += math.dist(lastPoint, newPoint)
+        lastPoint = newPoint.copy()
+        t = round(t + 0.05, 5)
+    
+    return length
+
+
+
 def fixWeirdSVGrules(string: str):
     string = string.replace(",", " ")
 
@@ -101,11 +135,33 @@ def fixWeirdSVGrules(string: str):
 def scaleLine(line: list[list]):
     scaledLine = []
     for point in line:
-        x = round(point[0] * scaleFactor + shift[0], 5)
-        y = round(point[1] * scaleFactor + shift[1], 5)
-        scaledLine.append([x,y])
+        if not str(point[0]).isalpha():
+            x = round(point[0] * scaleFactor + shift[0], 5)
+            y = round(point[1] * scaleFactor + shift[1], 5)
+            scaledLine.append([x,y])
+        else:
+            scaledLine.append(point)
 
     return scaledLine
+
+def fixElipseValues(value: list):
+    fixedValues = []
+    while len(value) > 0:
+        fixedValues.append(value.pop(0))
+        fixedValues.append(value.pop(0))
+        
+        i = 0
+        while i < 3:
+            if len(value[0]) == 1:
+                fixedValues.append(value.pop(0))
+            else:
+                fixedValues.append(value[0][0])
+                value[0] = value[0][1:]
+            i += 1
+        
+        fixedValues.append(value.pop(0))
+        fixedValues.append(value.pop(0))
+    return fixedValues
 
 
 def centerParameterization(s, radii, xRotate, fA, fS, e):
@@ -161,7 +217,7 @@ def centerParameterization(s, radii, xRotate, fA, fS, e):
 
 #Main part of code
 
-def parseSVG(pathToFile: str):
+def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
     rawString = open(pathToFile, "r").read()
     
     #Grab Only useful lines
@@ -179,6 +235,7 @@ def parseSVG(pathToFile: str):
             case "polygon":
                 lines.extend(parsePolygon(group))
 
+    adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
     print(gcode)
     return gcode
@@ -213,58 +270,64 @@ def parsePath(pathString: str):
     currentStartPoint = []
     currentPoint = [0,0]
     lastCtrlPoint = []
+    lastCommand = ""
     for command in commands:
         print(command)
+        if command[1] == '':
+            command[1] = []
+        currentLine.append([command[0], command[1].copy()])
         value:list = command[1]
         match command[0]:
             case "M":
                 currentLine = []
+                currentLine.append([command[0], command[1].copy()])
                 firstPoint = [float(value.pop(0)), float(value.pop(0))]
                 currentLine.append(firstPoint)
-                currentStartPoint = firstPoint
-                currentPoint = firstPoint
+                currentStartPoint = firstPoint.copy()
+                currentPoint = firstPoint.copy()
 
                 while len(value) > 0:
                     nextPoint = [float(value.pop(0)), float(value.pop(0))]
                     currentLine.append(nextPoint)
-                    currentPoint = nextPoint
+                    currentPoint = nextPoint.copy()
 
             case "m":
                 currentLine = []
+                currentLine.append([command[0], command[1].copy()])
                 firstPoint = [float(value.pop(0)) + currentPoint[0], float(value.pop(0)) + currentPoint[1]]
                 currentLine.append(firstPoint)
-                currentStartPoint = firstPoint
-                currentPoint = firstPoint
+                currentStartPoint = firstPoint.copy()
+                currentPoint = firstPoint.copy()
 
                 while len(value) > 0:
                     nextPoint = [float(value.pop(0)), float(value.pop(0))]
                     nextPoint = addPoints(currentPoint, nextPoint)
                     currentLine.append(nextPoint)
-                    currentPoint = nextPoint
+                    currentPoint = nextPoint.copy()
 
             case "H":
                 while len(value) > 0:
                     nextPoint = [float(value.pop(0)), currentPoint[1]]
                     currentLine.append(nextPoint)
-                    currentPoint = nextPoint
+                    currentPoint = nextPoint.copy()
 
             case "h":
                 while len(value) > 0:
                     nextPoint = [float(value.pop(0)) + currentPoint[0], currentPoint[1]]
                     currentLine.append(nextPoint)
-                    currentPoint = nextPoint
+                    currentPoint = nextPoint.copy()
 
             case "V":
                 while len(value) > 0:
                     nextPoint = [currentPoint[0], float(value.pop(0))]
                     currentLine.append(nextPoint)
-                    currentPoint = nextPoint
+                    currentPoint = nextPoint.copy()
 
             case "v":
                 while len(value) > 0:
                     nextPoint = [currentPoint[0], float(value.pop(0)) + currentPoint[1]]
                     currentLine.append(nextPoint)
-                    currentPoint = nextPoint
+                    currentPoint = nextPoint.copy()
 
             case "C":
                 while len(value) > 0:
@@ -275,13 +338,7 @@ def parsePath(pathString: str):
                     currentPoint = e.copy()
                     lastCtrlPoint = c2.copy()
 
-                    t = 0
-                    while t <= 1:
-                        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
-                        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
-                        nextPoint = [x,y]
-                        currentLine.append(nextPoint)
-                        t += .1
+                    currentLine.extend(parseCubicBezie(s, c1, c2, e))
 
             case "c":
                 while len(value) > 0:
@@ -292,33 +349,10 @@ def parsePath(pathString: str):
                     currentPoint = e.copy()
                     lastCtrlPoint = c2.copy()
 
-                    t = 0
-                    while t <= 1:
-                        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
-                        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
-                        nextPoint = [x,y]
-                        currentLine.append(nextPoint)
-                        t += .1
+                    currentLine.extend(parseCubicBezie(s, c1, c2, e))
 
             case "A":
-                fixedValues = []
-                while len(value) > 0:
-                    fixedValues.append(value.pop(0))
-                    fixedValues.append(value.pop(0))
-                    
-                    i = 0
-                    while i < 3:
-                        if len(value[0]) == 1:
-                            fixedValues.append(value.pop(0))
-                        else:
-                            fixedValues.append(value[0][0])
-                            value[0] = value[0][1:]
-                        i += 1
-                    
-                    fixedValues.append(value.pop(0))
-                    fixedValues.append(value.pop(0))
-                
-                value = fixedValues
+                value = fixElipseValues(value)
                 print(value)
 
                 while len(value) > 0:
@@ -330,41 +364,11 @@ def parsePath(pathString: str):
                     e = [float(value.pop(0)), float(value.pop(0))]
                     currentPoint = e.copy()
 
-                    array = centerParameterization(s, radii, xRotate, fA, fS, e)
-                    centers = array[0]
-                    startAngle = array[1]
-                    deltaAngle = array[2]
-
-                    #Get points to draw
-                    t = 0
-                    while t <= 1:
-                        angle = lerp(clamp(0, 1.0, t), 0, deltaAngle) + startAngle
-                        x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
-                        y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
-                        currentLine.append([x,y])
-                        t = round(t + 0.05, 5)
+                    currentLine.extend(parseElipse(s, radii, xRotate, fA, fS, e))
 
             case "a":
-                fixedValues = []
-                while len(value) > 0:
-                    fixedValues.append(value.pop(0))
-                    fixedValues.append(value.pop(0))
-                    
-                    i = 0
-                    while i < 3:
-                        if len(value[0]) == 1:
-                            fixedValues.append(value.pop(0))
-                        else:
-                            fixedValues.append(value[0][0])
-                            value[0] = value[0][1:]
-                        i += 1
-                    
-                    fixedValues.append(value.pop(0))
-                    fixedValues.append(value.pop(0))
-                
-                value = fixedValues
+                value = fixElipseValues(value)
                 print(value)
-
 
                 while len(value) > 0:
                     subset = []
@@ -376,35 +380,28 @@ def parsePath(pathString: str):
                     e = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
                     currentPoint = e.copy()
 
-                    array = centerParameterization(s, radii, xRotate, fA, fS, e)
-                    centers = array[0]
-                    startAngle = array[1]
-                    deltaAngle = array[2]
-
-                    #Get points to draw
-                    t = 0
-                    while t <= 1:
-                        angle = lerp(clamp(0, 1.0, t), 0, deltaAngle) + startAngle
-                        x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
-                        y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
-                        currentLine.append([x,y])
-                        t = round(t + 0.05, 5)
+                    currentLine.extend(parseElipse(s, radii, xRotate, fA, fS, e))
 
             case "L":
-                newPoint = [float(value.pop(0)), float(value.pop(0))]
-                currentLine.append(newPoint)
-                currentPoint = newPoint
+                while len(value) > 0:
+                    newPoint = [float(value.pop(0)), float(value.pop(0))]
+                    currentLine.append(newPoint)
+                    currentPoint = newPoint.copy()
 
             case "l":
-                newPoint = [float(value.pop(0)) + currentPoint[0], float(value.pop(0)) + currentPoint[1]]
-                currentLine.append(newPoint)
-                currentPoint = newPoint
+                while len(value) > 0:
+                    newPoint = [float(value.pop(0)) + currentPoint[0], float(value.pop(0)) + currentPoint[1]]
+                    currentLine.append(newPoint)
+                    currentPoint = newPoint.copy()
 
             case "Z" | "z":
+                currentPoint = currentStartPoint.copy()
                 currentLine.append(currentStartPoint)
                 lines.append(currentLine)
 
             case "S":
+                if lastCommand.capitalize() == "C" or lastCommand.capitalize() == "S":
+                    lastCtrlPoint = currentPoint
                 while len(value) > 0:
                     s = currentPoint
                     delta = [currentPoint[0] - lastCtrlPoint[0], currentPoint[1] - lastCtrlPoint[1]]
@@ -414,15 +411,11 @@ def parsePath(pathString: str):
                     currentPoint = e.copy()
                     lastCtrlPoint = c2.copy()
 
-                    t = 0
-                    while t <= 1:
-                        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
-                        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
-                        nextPoint = [x,y]
-                        currentLine.append(nextPoint)
-                        t += .1
+                    currentLine.extend(parseCubicBezie(s, c1, c2, e))
 
             case "s":
+                if not (lastCommand.capitalize() == "C" or lastCommand.capitalize() == "S"):
+                    lastCtrlPoint = currentPoint
                 while len(value) > 0:
                     s = currentPoint
                     delta = [currentPoint[0] - lastCtrlPoint[0], currentPoint[1] - lastCtrlPoint[1]]
@@ -432,21 +425,52 @@ def parsePath(pathString: str):
                     currentPoint = e.copy()
                     lastCtrlPoint = c2.copy()
 
-                    t = 0
-                    while t <= 1:
-                        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
-                        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
-                        nextPoint = [x,y]
-                        currentLine.append(nextPoint)
-                        t += .1
+                    currentLine.extend(parseCubicBezie(s, c1, c2, e))
 
 
 
             case _:
                 print(f"Implement {command[0]}")
+                i = 1/0
                 pass
+        lastCommand = command[0]
 
     return lines
+
+
+def parseCubicBezie(s, c1, c2, e):
+    points = []
+    length = aproxLenCubic(s, c1, c2, e)
+    t = 0
+    while t <= 1:
+        t = clamp(0, 1, t)
+        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
+        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
+        nextPoint = [x,y]
+        points.append(nextPoint)
+        t += 1/(length * 10)
+
+    return points
+
+
+def parseElipse(s, radii, xRotate, fA, fS, e):
+    points = []
+    array = centerParameterization(s, radii, xRotate, fA, fS, e)
+    centers = array[0]
+    startAngle = array[1]
+    deltaAngle = array[2]
+
+    #Get points to draw
+    length = aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers)
+    t = 0
+    while t <= 1:
+        angle = lerp(clamp(0, 1.0, t), 0, deltaAngle) + startAngle
+        x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
+        y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
+        points.append([x,y])
+        t += 1/(length * 10)
+    
+    return points
 
 
 def parsePolygon(pathString: str):
@@ -473,10 +497,49 @@ def parseLinesIntoGcode(lines: list[list[list]]):
     for line in lines:
         line = scaleLine(line)
         finalGcode += "G0 Z10 \n"
-        finalGcode += f"G0 X{line[0][0]} Y{line[0][1]} \n"
+        finalGcode += f"G0 X{line[1][0]} Y{line[1][1]} \n"
         finalGcode += "G1 Z0 \n"
         for point in line:
-            finalGcode += f"G1 X{point[0]} Y{point[1]} \n"
+            if str(point[0]).isalpha():
+                finalGcode += f";{point} \n"
+            else:
+                finalGcode += f"G1 X{point[0]} Y{point[1]} \n"
         finalGcode += "G0 Z10 \n"
 
     return finalGcode
+
+
+def adjustScalePosition(desiredMaxSize, desiredCenter, lines):
+    global scaleFactor
+    global shift
+
+    minX = math.inf
+    minY = math.inf
+    maxX = -math.inf
+    maxY = -math.inf
+
+    for line in lines:
+        for point in line:
+            if not str(point[0]).isalpha():
+                if point[0] < minX:
+                    minX = point[0]
+                if point[0] > maxX:
+                    maxX = point[0]
+                if point[1] < minY:
+                    minY = point[1]
+                if point[1] > maxY:
+                    maxY = point[1]
+
+    print(minX, maxX)
+    print(minY, maxY)
+    xSize = maxX - minX
+    ySize = maxY - minY
+    largest = 0
+    if xSize > ySize:
+        largest = xSize
+    else:
+        largest = ySize
+    scaleFactor = desiredMaxSize/largest
+
+    center = [(minX + maxX) / 2, (minY + maxY) / 2]
+    shift = [-center[0] * scaleFactor + desiredCenter[0], -center[1] * scaleFactor + desiredCenter[0]]

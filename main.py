@@ -1,6 +1,6 @@
 import SVGparser
 import pyperclip
 
-path = "testSVG\\microscope-2-svgrepo-com.svg"
+path = "testSVG/python-16-svgrepo-com.svg"
 
-pyperclip.copy(SVGparser.parseSVG(path))
+pyperclip.copy(SVGparser.parseSVG(path, 300, [0,0]))
