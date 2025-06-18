@@ -273,6 +273,9 @@ def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
                 case "rect":
                     rawLines = parseRectangle(path)
                     lines.extend(adjustGroups(rawLines, transform, rotation))
+                case "circle":
+                    rawLines = parseCircle(path)
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
 
     #adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
@@ -532,8 +535,41 @@ def parsePolygon(pathString: str):
     return [line]
 
 
-def parseRectangle(pathString: str):
+def parseCircle(pathString: str):
     print(pathString)
+    cx = 0
+    cy = 0
+    r = 0
+
+    splitString = pathString.split()
+    for param in splitString:
+        try:
+            index = param.index("=")
+            key = param[0:index]
+            match key:
+                case "cx":
+                    cx = float(param.split('"')[1])
+                case "cy":
+                    cy = float(param.split('"')[1])
+                case "r":
+                    r = float(param.split('"')[1])
+        except:
+            pass
+
+    
+    commands = [
+        ["M", [cx+r, cy]],
+        ["A", [r, r, "0", "0", "1", cx, cy+r]],
+        ["A", [r, r, "0", "0", "1", cx-r, cy]],
+        ["A", [r, r, "0", "0", "1", cx, cy-r]],
+        ["A", [r, r, "0", "0", "1", cx+r, cy]],
+        ["Z", []]
+    ]
+
+    return parsePath(commands)
+
+
+def parseRectangle(pathString: str):
     x = 0
     y = 0
     width = 0
@@ -591,7 +627,6 @@ def parseRectangle(pathString: str):
         commandList.insert(6, ["A", [rx, ry, "0", "0", "1", x, y+height-ry]])
         commandList.insert(8, ["A", [rx, ry, "0", "0", "1", x+rx, y]])
 
-    print(x,y,width,height)
     line = parsePath(commandList)
     return line
 
