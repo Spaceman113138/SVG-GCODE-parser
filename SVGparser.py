@@ -219,23 +219,60 @@ def centerParameterization(s, radii, xRotate, fA, fS, e):
 
 def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
     rawString = open(pathToFile, "r").read()
-    
-    #Grab Only useful lines
-    groups = rawString.split("<")
+
+    groups = []
+
+    try:
+        while True:
+            startIndex = rawString.index("<g")
+            endIndex = rawString.index("</g>")
+            groups.append(rawString[0:startIndex])
+            groups.append(rawString[startIndex: endIndex])
+            rawString = rawString[endIndex:]
+    except:
+        pass
+
+    groups.append(rawString)
+
     lines = []
-    #Parse Usefull Groups
+
     for group in groups:
-        try:
-            firstWord = group.split()[0]
-        except:
-            continue
-        match firstWord:
-            case "path":
-                lines.extend(parsePath(pathStringToCommands(group)))
-            case "polygon":
-                lines.extend(parsePolygon(group))
-            case "rect":
-                lines.extend(parseRectangle(group))
+        transform = [0,0]
+        rotation = 0
+        #Grab Only useful lines
+        paths = group.split("<")
+        #Parse Usefull Groups
+        for path in paths:
+            try:
+                firstWord = path.split()[0]
+            except:
+                continue
+            match firstWord:
+                case "g":
+                    try:
+                        index = path.index("translate")
+                        sub = path[index:]
+                        sub = re.split("[()]", sub)[1]
+                        transform = sub.split()
+                        transform = [float(transform[0]), float(transform[1])]
+                    except:
+                        pass
+                    try:
+                        index = path.index("rotate")
+                        sub = path[index:]
+                        sub = re.split("[()]", sub)[1]
+                        rotation = float(sub)
+                    except:
+                        pass
+                case "path":
+                    rawLines = parsePath(pathStringToCommands(path))
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
+                case "polygon":
+                    rawLines = parsePolygon(path)
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
+                case "rect":
+                    rawLines = parseRectangle(path)
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
 
     #adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
@@ -615,3 +652,20 @@ def adjustScalePosition(desiredMaxSize, desiredCenter, lines):
 
     center = [(minX + maxX) / 2, (minY + maxY) / 2]
     shift = [-center[0] * scaleFactor + desiredCenter[0], -center[1] * scaleFactor + desiredCenter[0]]
+
+
+def adjustGroups(lines, translation, rotation):
+    rotation = math.radians(rotation)
+    newLines = []
+    for line in lines:
+        newLine = []
+        for point in line:
+            if str(point[0]).isalpha():
+                newLine.append(point)
+            else:
+                rotatedPoint = [point[0] * math.cos(rotation) + point[1] * -math.sin(rotation),
+                                point[0] * math.sin(rotation) + point[1] * math.cos(rotation)]
+                translatedPoint = addPoints(rotatedPoint, translation)
+                newLine.append(translatedPoint)
+        newLines.append(newLine)
+    return newLines
