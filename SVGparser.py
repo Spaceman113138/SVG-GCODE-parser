@@ -1,5 +1,6 @@
 import re
 import math
+import util
 
 scaleFactor = 1.0
 shift = [0,0]
@@ -11,64 +12,6 @@ drawSpeed = 20
 
 
 #Utilish Functions
-def clamp(min, max, val):
-    if max < val:
-        return max
-    elif min > val:
-        return min
-    else:
-        return val
-
-def angleVectors(vec1, vec2):
-    sign = 1
-    if vec1[0] * vec2[1] - vec1[1]*vec2[0] < 0:
-        sign = -1
-
-    dotProduct = vec1[0] * vec2[0] + vec1[1] * vec2[1]
-    magProduct = math.dist([0,0], vec1) * math.dist([0,0], vec2)
-    return sign * math.acos(clamp(-1, 1, dotProduct/magProduct))
-
-def addPoints(p1, p2):
-    return [p1[0] + p2[0], p1[1] + p2[1]]
-
-
-def lerp(t, v1, v2):
-    return (1 - t) * v1 + t * v2
-
-
-def aproxLenCubic(s, c1, c2, e):
-    lastPoint = s
-    length = 0.0
-    t = 0.01
-    while t <= 1:
-        x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
-        y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
-        nextPoint = [x,y]
-        length += math.dist(nextPoint, lastPoint)
-        lastPoint = nextPoint.copy()
-        t += .01
-
-    return length
-
-
-def aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers):
-    length = 0
-    initX = radii[0] * math.cos(startAngle) * math.cos(xRotate) - radii[1] * math.sin(startAngle) * math.sin(xRotate) + centers[0]
-    initY = radii[0] * math.cos(startAngle) * math.sin(xRotate) + radii[1] * math.sin(startAngle) * math.cos(xRotate) + centers[1]
-    lastPoint = [initX, initY]
-    t = 0
-    while t <= 1:
-        angle = lerp(clamp(0, 1.0, t), 0, deltaAngle) + startAngle
-        x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
-        y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
-        newPoint = [x,y]
-        length += math.dist(lastPoint, newPoint)
-        lastPoint = newPoint.copy()
-        t = round(t + 0.05, 5)
-    
-    return length
-
-
 
 def fixWeirdSVGrules(string: str):
     string = string.replace(",", " ")
@@ -200,8 +143,8 @@ def centerParameterization(s, radii, xRotate, fA, fS, e):
     endVec = [(-pointsPrime[0] - centerPrime[0])/radii[0], (-pointsPrime[1] - centerPrime[1])/radii[1]]
 
     #Angles in radians
-    startAngle = angleVectors(vec1, startVec)
-    deltaAngle = angleVectors(startVec, endVec) % (2 * math.pi)
+    startAngle = util.angleVectors(vec1, startVec)
+    deltaAngle = util.angleVectors(startVec, endVec) % (2 * math.pi)
 
     if fS == False and deltaAngle > 0:
         deltaAngle -= 2 * math.pi
@@ -276,10 +219,13 @@ def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
                 case "circle":
                     rawLines = parseCircle(path)
                     lines.extend(adjustGroups(rawLines, transform, rotation))
+                case "ellipse":
+                    rawLines = parseGeometricElipse(path)
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
 
     #adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
-    print(gcode)
+    #print(gcode)
     return gcode
 
 
@@ -349,7 +295,7 @@ def parsePath(commands: list):
 
                 while len(value) > 0:
                     nextPoint = [float(value.pop(0)), float(value.pop(0))]
-                    nextPoint = addPoints(currentPoint, nextPoint)
+                    nextPoint = util.addPoints(currentPoint, nextPoint)
                     currentLine.append(nextPoint)
                     currentPoint = nextPoint.copy()
 
@@ -391,9 +337,9 @@ def parsePath(commands: list):
             case "c":
                 while len(value) > 0:
                     s = currentPoint
-                    c1 = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
-                    c2 = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
-                    e = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
+                    c1 = util.addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
+                    c2 = util.addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
+                    e = util.addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
                     currentPoint = e.copy()
                     lastCtrlPoint = c2.copy()
 
@@ -425,7 +371,7 @@ def parsePath(commands: list):
                     xRotate = math.radians(float(value.pop(0)))
                     fA = bool(int(value.pop(0)))
                     fS = bool(int(value.pop(0)))
-                    e = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
+                    e = util.addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
                     currentPoint = e.copy()
 
                     currentLine.extend(parseElipse(s, radii, xRotate, fA, fS, e))
@@ -453,7 +399,7 @@ def parsePath(commands: list):
                 while len(value) > 0:
                     s = currentPoint
                     delta = [currentPoint[0] - lastCtrlPoint[0], currentPoint[1] - lastCtrlPoint[1]]
-                    c1 = addPoints(delta, s)
+                    c1 = util.addPoints(delta, s)
                     c2 = [float(value.pop(0)), float(value.pop(0))]
                     e = [float(value.pop(0)), float(value.pop(0))]
                     currentPoint = e.copy()
@@ -467,9 +413,9 @@ def parsePath(commands: list):
                 while len(value) > 0:
                     s = currentPoint
                     delta = [currentPoint[0] - lastCtrlPoint[0], currentPoint[1] - lastCtrlPoint[1]]
-                    c1 = addPoints(delta, s)
-                    c2 = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
-                    e = addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
+                    c1 = util.addPoints(delta, s)
+                    c2 = util.addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
+                    e = util.addPoints(currentPoint, [float(value.pop(0)), float(value.pop(0))])
                     currentPoint = e.copy()
                     lastCtrlPoint = c2.copy()
 
@@ -488,15 +434,15 @@ def parsePath(commands: list):
 
 def parseCubicBezie(s, c1, c2, e):
     points = []
-    length = aproxLenCubic(s, c1, c2, e)
+    length = util.aproxLenCubic(s, c1, c2, e)
     t = 0
     while t <= 1:
-        t = clamp(0, 1, t)
+        t = util.clamp(0, 1, t)
         x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
         y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
         nextPoint = [x,y]
         points.append(nextPoint)
-        t += 1/(length * 10)
+        t += 1/(length * 1)
 
     return points
 
@@ -509,14 +455,14 @@ def parseElipse(s, radii, xRotate, fA, fS, e):
     deltaAngle = array[2]
 
     #Get points to draw
-    length = aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers)
+    length = util.aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers)
     t = 0
     while t <= 1:
-        angle = lerp(clamp(0, 1.0, t), 0, deltaAngle) + startAngle
+        angle = util.lerp(util.clamp(0, 1.0, t), 0, deltaAngle) + startAngle
         x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
         y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
         points.append([x,y])
-        t += 1/(length * 10)
+        t += 1/(length * 0.1)
     
     return points
 
@@ -533,6 +479,59 @@ def parsePolygon(pathString: str):
         line.append([float(finalPoints.pop(0)), float(finalPoints.pop(0))])
     print(line)
     return [line]
+
+
+def parseGeometricElipse(pathString: str):
+    print(pathString)
+    cx = 0
+    cy = 0
+    rx = 0
+    ry = 0
+    translation = [0,0]
+    rotation = 0
+    strokeWidth = 0
+
+    splitString = util.splitIgnoreThing(" ", ['"'], pathString)
+    for param in splitString:
+        try:
+            index = param.index("=")
+            key = param[0:index]
+            match key:
+                case "cx":
+                    cx = float(param.split('"')[1])
+                case "cy":
+                    cy = float(param.split('"')[1])
+                case "rx":
+                    rx = float(param.split('"')[1])
+                case "ry":
+                    ry = float(param.split('"')[1])
+                case "stroke-width":
+                    strokeWidth = float(param.split('"')[1])
+                case "transform":
+                    data: list[str] = util.splitIgnoreThing(" ", ["(", ")"], param.split('"')[1])
+                    translate = data[0].removeprefix("translate(").removesuffix(")").split()
+                    translation = [float(translate[0]), float(translate[1])]
+                    rotation = float(data[1].removeprefix("rotate(").removesuffix(")"))
+                    
+                    print((translate, rotation))
+        except:
+            pass
+    
+    commands = [
+        ["M", [cx+rx, cy]],
+        ["A", [rx, ry, "0", "0", "1", cx, cy+ry]],
+        ["A", [rx, ry, "0", "0", "1", cx-rx, cy]],
+        ["A", [rx, ry, "0", "0", "1", cx, cy-ry]],
+        ["A", [rx, ry, "0", "0", "1", cx+rx, cy]],
+        ["Z", []]
+    ]
+
+    lines = parsePath(commands)
+
+    if translation != [0,0] or rotation != 0:
+        lines = adjustGroups(lines, translation, rotation)
+
+    return lines
 
 
 def parseCircle(pathString: str):
@@ -700,7 +699,7 @@ def adjustGroups(lines, translation, rotation):
             else:
                 rotatedPoint = [point[0] * math.cos(rotation) + point[1] * -math.sin(rotation),
                                 point[0] * math.sin(rotation) + point[1] * math.cos(rotation)]
-                translatedPoint = addPoints(rotatedPoint, translation)
+                translatedPoint = util.addPoints(rotatedPoint, translation)
                 newLine.append(translatedPoint)
         newLines.append(newLine)
     return newLines
