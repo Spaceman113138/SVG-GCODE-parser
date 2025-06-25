@@ -490,6 +490,7 @@ def parseGeometricElipse(pathString: str):
     translation = [0,0]
     rotation = 0
     strokeWidth = 0
+    fill = "none"
 
     splitString = util.splitIgnoreThing(" ", ['"'], pathString)
     for param in splitString:
@@ -505,6 +506,8 @@ def parseGeometricElipse(pathString: str):
                     rx = float(param.split('"')[1])
                 case "ry":
                     ry = float(param.split('"')[1])
+                case "fill":
+                    fill = param.split('"')[1]
                 case "stroke-width":
                     strokeWidth = float(param.split('"')[1])
                 case "transform":
@@ -512,10 +515,15 @@ def parseGeometricElipse(pathString: str):
                     translate = data[0].removeprefix("translate(").removesuffix(")").split()
                     translation = [float(translate[0]), float(translate[1])]
                     rotation = float(data[1].removeprefix("rotate(").removesuffix(")"))
-                    
+
                     print((translate, rotation))
         except:
             pass
+
+    rx2 = rx + strokeWidth/2
+    ry2 = ry + strokeWidth/2
+    rx = rx - strokeWidth/2
+    ry = ry - strokeWidth/2
     
     commands = [
         ["M", [cx+rx, cy]],
@@ -523,8 +531,18 @@ def parseGeometricElipse(pathString: str):
         ["A", [rx, ry, "0", "0", "1", cx-rx, cy]],
         ["A", [rx, ry, "0", "0", "1", cx, cy-ry]],
         ["A", [rx, ry, "0", "0", "1", cx+rx, cy]],
-        ["Z", []]
+        ["Z", []],
     ]
+
+    if fill == "none":
+        commands.extend(
+            [["M", [cx+rx2, cy]],
+            ["A", [rx2, ry2, "0", "0", "1", cx, cy+ry2]],
+            ["A", [rx2, ry2, "0", "0", "1", cx-rx2, cy]],
+            ["A", [rx2, ry2, "0", "0", "1", cx, cy-ry2]],
+            ["A", [rx2, ry2, "0", "0", "1", cx+rx2, cy]],
+            ["Z", []]]
+        )
 
     lines = parsePath(commands)
 
@@ -539,6 +557,7 @@ def parseCircle(pathString: str):
     cx = 0
     cy = 0
     r = 0
+    strokeWidth = 0
 
     splitString = pathString.split()
     for param in splitString:
@@ -552,9 +571,13 @@ def parseCircle(pathString: str):
                     cy = float(param.split('"')[1])
                 case "r":
                     r = float(param.split('"')[1])
+                case "fill":
+                    fill = param.split('"')[1]
         except:
             pass
 
+    r2 = r - strokeWidth/2
+    r = r + strokeWidth/2
     
     commands = [
         ["M", [cx+r, cy]],
@@ -564,6 +587,18 @@ def parseCircle(pathString: str):
         ["A", [r, r, "0", "0", "1", cx+r, cy]],
         ["Z", []]
     ]
+
+    if strokeWidth > 0:
+        commands.extend(
+            [
+                ["M", [cx+r2, cy]],
+                ["A", [r2, r2, "0", "0", "1", cx, cy+r2]],
+                ["A", [r2, r2, "0", "0", "1", cx-r2, cy]],
+                ["A", [r2, r2, "0", "0", "1", cx, cy-r2]],
+                ["A", [r2, r2, "0", "0", "1", cx+r2, cy]],
+                ["Z", []]
+            ]
+        )
 
     return parsePath(commands)
 
@@ -575,6 +610,7 @@ def parseRectangle(pathString: str):
     height = 0
     rx = -1
     ry = -1
+    strokeWidth = 0
 
     splitString = pathString.split()
     for param in splitString:
@@ -594,6 +630,8 @@ def parseRectangle(pathString: str):
                     rx = float(param.split('"')[1])
                 case "ry":
                     ry = float(param.split('"')[1])
+                case "stroke-width":
+                    strokeWidth = float(param.split('"')[1])
         except:
             pass
 
@@ -611,20 +649,74 @@ def parseRectangle(pathString: str):
         ry = height/2
 
     #convert to path because it makes it easier
-    commandList = [
-        ["M", [x+rx, y]],
-        ["H", [x+width-rx]],
-        ["V", [y+height-ry]],
-        ["H", [x+rx]],
-        ["V", [y+ry]],
-        ["Z", ""]
-    ]
+    commandList = []
+    if strokeWidth == 0:
+        commandList = [
+            ["M", [x+rx, y]],
+            ["H", [x+width-rx]],
+            ["V", [y+height-ry]],
+            ["H", [x+rx]],
+            ["V", [y+ry]],
+            ["Z", ""]
+        ]
 
-    if rx > 0 and ry > 0:
-        commandList.insert(2, ["A", [rx, ry, "0", "0", "1", x+width, y+ry]])
-        commandList.insert(4, ["A", [rx, ry, "0", "0", "1", x+width-rx, y+height]])
-        commandList.insert(6, ["A", [rx, ry, "0", "0", "1", x, y+height-ry]])
-        commandList.insert(8, ["A", [rx, ry, "0", "0", "1", x+rx, y]])
+        if rx > 0 and ry > 0:
+            commandList.insert(2, ["A", [rx, ry, "0", "0", "1", x+width, y+ry]])
+            commandList.insert(4, ["A", [rx, ry, "0", "0", "1", x+width-rx, y+height]])
+            commandList.insert(6, ["A", [rx, ry, "0", "0", "1", x, y+height-ry]])
+            commandList.insert(8, ["A", [rx, ry, "0", "0", "1", x+rx, y]])
+    else:
+        outerW = width + strokeWidth
+        outerH = height + strokeWidth
+        innerX = x + strokeWidth/2
+        innerY = y + strokeWidth/2
+
+        innerW = width - strokeWidth
+        innerH = height - strokeWidth
+        outerX = x - strokeWidth/2
+        outerY = y - strokeWidth/2
+
+        Xper = rx/width
+        Yper = ry/height
+        outerRx = outerW * Xper
+        outerRy = outerH * Yper
+        innerRx = innerW * Xper
+        innerRy = innerH * Yper
+
+        innerList = [
+            ["M", [innerX+innerRx, innerY]],
+            ["H", [innerX+innerW-innerRx]],
+            ["V", [innerY+innerH-innerRy]],
+            ["H", [innerX+innerRx]],
+            ["V", [innerY+innerRy]],
+            ["Z", ""]
+        ]
+
+        outerList = [
+            ["M", [outerX+outerRx, outerY]],
+            ["H", [outerX+outerW-outerRx]],
+            ["V", [outerY+outerH-outerRy]],
+            ["H", [outerX+outerRx]],
+            ["V", [outerY+outerRy]],
+            ["Z", ""]
+        ]
+
+        if rx != 0 and ry != 0:
+            innerList.insert(2, ["A", [rx, ry, "0", "0", "1", innerX+innerW, innerY+innerRy]])
+            innerList.insert(4, ["A", [rx, ry, "0", "0", "1", innerX+innerW-innerRx, innerY+innerH]])
+            innerList.insert(6, ["A", [rx, ry, "0", "0", "1", innerX, innerY+innerH-innerRy]])
+            innerList.insert(8, ["A", [rx, ry, "0", "0", "1", innerX+innerRx, innerY]])
+
+            outerList.insert(2, ["A", [rx, ry, "0", "0", "1", outerX+outerW, outerY+outerRy]])
+            outerList.insert(4, ["A", [rx, ry, "0", "0", "1", outerX+outerW-outerRx, outerY+outerH]])
+            outerList.insert(6, ["A", [rx, ry, "0", "0", "1", outerX, outerY+outerH-outerRy]])
+            outerList.insert(8, ["A", [rx, ry, "0", "0", "1", outerX+outerRx, outerY]])
+        
+        commandList.extend(innerList)
+        commandList.extend(outerList)
+
+
+
 
     line = parsePath(commandList)
     return line
