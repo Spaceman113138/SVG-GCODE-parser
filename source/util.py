@@ -1,5 +1,4 @@
 import math
-from typing_extensions import Self
 
 def clamp(min, max, val):
     if max < val:
