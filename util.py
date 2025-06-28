@@ -1,4 +1,5 @@
 import math
+from typing_extensions import Self
 
 def clamp(min, max, val):
     if max < val:
@@ -84,3 +85,113 @@ def splitIgnoreThing(delim: str, ignore: list, string: str):
     
     result.append(string)
     return result
+
+
+def angleBetweenVectors(u, v):
+    dot_product = sum(i*j for i, j in zip(u, v))
+    norm_u = math.sqrt(sum(i**2 for i in u))
+    norm_v = math.sqrt(sum(i**2 for i in v))
+    cos_theta = dot_product / (norm_u * norm_v)
+    angle_rad = math.acos(cos_theta)
+    return angle_rad
+
+class Vector2d():
+    x = 0
+    y = 0
+    slope = 0
+    angle = 0
+    def __init__(self, x, y) -> None:
+        self.x = x
+        self.y = y
+        self.slope = self.calcSlope()
+        self.angle = self.getAngle()
+
+    def __add__(self, vec2):
+        return Vector2d(self.x + vec2.x, self.y + vec2.y)
+    
+    def __sub__(self, vec2):
+        return Vector2d(self.x - vec2.x, self.y - vec2.y)
+    
+    def __mul__(self, scalar):
+        return Vector2d(self.x * scalar, self.y * scalar)
+    
+    def __truediv__(self, scalar):
+        return self * (1/scalar)
+    
+    def __neg__(self):
+        return self * -1
+    
+    def magnitude(self):
+        return math.sqrt(self.x ** 2 + self.y ** 2)
+    
+    def asUnitVector(self):
+        return Vector2d(self.x / self.magnitude(), self.y / self.magnitude())
+    
+    def dotWith(self, vector2):
+        return self.x * vector2.x + self.y * vector2.y
+    
+    def angleBetween(self, vector2):
+        dot_product = self.dotWith(vector2)
+        norm_u = self.magnitude()
+        norm_v = vector2.magnitude()
+        cos_theta = dot_product / (norm_u * norm_v)
+        angle_rad = math.acos(cos_theta)
+        return angle_rad
+    
+    def flip(self):
+        return -self
+    
+    def perpendicularUnit(self):
+        return Vector2d(-self.y, self.x).asUnitVector()
+    
+    def addToPoint(self, point:list):
+        return [point[0] + self.x, point[1] + self.y]
+    
+    def calcSlope(self):
+        try:
+            return self.y/self.x
+        except:
+            return "undefined"
+        
+    def getAngle(self):
+        return math.atan2(self.y, self.x)
+    
+    def toLine(self, point):
+        p1 = point
+        p2 = self.addToPoint(point)
+        a = (p1[1] - p2[1])
+        b = (p2[0] - p1[0])
+        c = -(p1[0]*p2[1] - p2[0]*p1[1])
+
+        return Line(a,b,c)
+    
+
+
+    @staticmethod
+    def fromPoints(start: list, end: list):
+        return Vector2d(end[0] - start[0], end[1] - start[1])
+    @staticmethod
+    def fromPolar(angle, magnitude = 1):
+        return Vector2d(math.cos(angle) * magnitude, math.sin(angle) * magnitude)
+
+
+class Line():
+    a,b,c = 0,0,0
+
+    def __init__(self, a, b, c):
+        self.a = a
+        self.b = b
+        self.c = c
+
+    def intersectionWith(self, line):
+        Dx = self.c * line.b - self.b * line.c
+        D  = self.a * line.b - self.b * line.a
+        Dy = self.a * line.c - self.c * line.a
+        if D != 0:
+            x = Dx / D
+            y = Dy / D
+            return [x,y]
+        else:
+            return False
+
+

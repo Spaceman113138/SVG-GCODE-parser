@@ -1,6 +1,7 @@
 import re
 import math
 import util
+from util import Vector2d
 
 scaleFactor = 1.0
 shift = [0,0]
@@ -13,8 +14,12 @@ drawSpeed = 20
 
 #Utilish Functions
 
+def vecNorm(vect):
+    return math.sqrt(vect[0] ** 2 + vect[1] ** 2)
+
 def fixWeirdSVGrules(string: str):
     string = string.replace(",", " ")
+    string = string.replace("\n", "")
 
     #Turn #A# -> # A #
     i = 0
@@ -70,6 +75,14 @@ def fixWeirdSVGrules(string: str):
         elif char == " ":
             hasMetPeriod = False
         
+        i += 1
+
+    #remove extra spaces
+    i = 0
+    while i < len(string):
+        if string[i] == " " and string[i + 1] == " ":
+            string = string[0:i] + string[i + 1:]
+            i -= 1
         i += 1
 
     return string
@@ -221,6 +234,12 @@ def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
                     lines.extend(adjustGroups(rawLines, transform, rotation))
                 case "ellipse":
                     rawLines = parseGeometricElipse(path)
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
+                case "line":
+                    rawLines = parseGeometricLine(path)
+                    lines.extend(adjustGroups(rawLines, transform, rotation))
+                case "polyline":
+                    rawLines = parseGeometricPolyline(path)
                     lines.extend(adjustGroups(rawLines, transform, rotation))
 
     #adjustScalePosition(desiredSize, desiredCenter, lines)
@@ -468,8 +487,23 @@ def parseElipse(s, radii, xRotate, fA, fS, e):
 
 
 def parsePolygon(pathString: str):
-    onlyPoints = pathString.split("points=\"")[1]
-    onlyPoints = onlyPoints.strip().removesuffix('"/>').strip()
+    onlyPoints = ""
+    strokeWidth = 0
+
+
+    splitString = util.splitIgnoreThing(" ", ['"'], pathString)
+    for param in splitString:
+        try:
+            index = param.index("=")
+            key = param[0:index]
+            match key:
+                case "points":
+                    onlyPoints = param.split('"')[1]
+                case "stroke-width":
+                    strokeWidth = float(param.split('"')[1])
+        except:
+            pass
+
     finalPoints = fixWeirdSVGrules(onlyPoints).split()
     print(["Polygon", finalPoints])
 
@@ -479,6 +513,141 @@ def parsePolygon(pathString: str):
         line.append([float(finalPoints.pop(0)), float(finalPoints.pop(0))])
     print(line)
     return [line]
+
+
+def parseGeometricLine(pathString: str):
+    print(pathString)
+    x1 = 0
+    y1 = 0
+    x2 = 0
+    y2 = 0
+    strokeWidth = 0
+
+    splitString = util.splitIgnoreThing(" ", ['"'], pathString)
+    for param in splitString:
+        try:
+            index = param.index("=")
+            key = param[0:index]
+            match key:
+                case "x1":
+                    x1 = float(param.split('"')[1])
+                case "y1":
+                    y1 = float(param.split('"')[1])
+                case "x2":
+                    x2 = float(param.split('"')[1])
+                case "y2":
+                    y2 = float(param.split('"')[1])
+                case "stroke-width":
+                    strokeWidth = float(param.split('"')[1])
+        except:
+            pass
+
+    lines = []
+
+    if strokeWidth != 0:
+        vect = [x2 - x1, y2 - y1]
+        perpVect = [vect[1], -vect[0]]
+        finalVect = [perpVect[0] / vecNorm(perpVect) * strokeWidth / 2, perpVect[1] / vecNorm(perpVect) * strokeWidth / 2]
+        
+        path = [
+            ["M", [x1 + finalVect[0], y1 + finalVect[1]]],
+            ["L", [x2 + finalVect[0], y2 + finalVect[1]]],
+            ["L", [x2 - finalVect[1], y2 - finalVect[1]]],
+            ["L", [x1 - finalVect[1], y1 - finalVect[1]]],
+            ["Z", []]
+        ]
+
+        lines = parsePath(path)
+
+    else:
+        lines = [
+            [[x1,y1], [x2,y2]]
+        ]
+
+    return lines
+
+def offsetLine(points: list, offsetLength: float, flag: bool):
+    newPoints = []
+
+    initialLine = Vector2d.fromPoints(points[0], points[1])
+    seedVector = initialLine.perpendicularUnit() * offsetLength
+    if flag:
+        seedVector = seedVector.flip()
+
+    newPoints.append(seedVector.addToPoint(points[0]))
+
+    for i in range(1, len(points) - 1, 1):
+        prevNewPoint = newPoints[-1]
+        prevPoint = points[i-1]
+        currPoint = points[i]
+        nextPoint = points[i+1]
+
+        vec1 = Vector2d.fromPoints(currPoint, prevPoint)
+        vec2 = Vector2d.fromPoints(currPoint, nextPoint)
+        a1, a2 = vec1.angle, vec2.angle
+        #AVERAGE THE VECTORS ANGLES!!!!!!!!!!!!!!!!!!!!!
+        angle = (a1 + a2) / 2
+        perpLine = Vector2d.fromPolar(angle)
+        perpLine = perpLine.toLine(currPoint)
+        previousLine = vec1.toLine(prevNewPoint)
+        newPoint = perpLine.intersectionWith(previousLine)
+        newPoints.append(newPoint)
+
+    prevPoint = points[-2]
+    prevNew = newPoints[-1]
+    lastPoint = points[-1]
+    vector = Vector2d.fromPoints(prevPoint, lastPoint)
+    l1 = vector.perpendicularUnit().toLine(lastPoint)
+    l2 = vector.toLine(prevNew)
+    newPoint = l1.intersectionWith(l2)
+    newPoints.append(newPoint)
+
+    return newPoints
+   
+
+
+def parseGeometricPolyline(pathString: str):
+    points = []
+    strokeWidth = 0
+    
+    splitString = util.splitIgnoreThing(" ", ['"'], pathString)
+    for param in splitString:
+        try:
+            index = param.index("=")
+            key = param[0:index]
+            match key:
+                case "points":
+                    print(param)
+                    pointsOnly = param.split('"')[1].strip()
+                    points = fixWeirdSVGrules(pointsOnly).split(" ")
+                case "stroke-width":
+                    strokeWidth = float(param.split('"')[1])
+        except:
+            pass
+
+    lines: list = [[["polyline"]]]
+    parsePoints = []
+    addList = []
+    subList = []
+
+    while len(points) > 0:
+        point = [float(points.pop(0)), float(points.pop(0))]
+        parsePoints.append(point)
+
+    if strokeWidth != 0:
+        points1 = offsetLine(parsePoints, strokeWidth/2, False)
+        points2:list = offsetLine(parsePoints, strokeWidth/2, True)
+        points2.reverse()
+        points1.extend(points2)
+        parsePoints = points1
+        parsePoints.append(parsePoints[0])
+    
+    lines[0].extend(parsePoints)
+        
+
+
+    return lines
+
 
 
 def parseGeometricElipse(pathString: str):
