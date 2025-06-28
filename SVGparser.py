@@ -486,6 +486,41 @@ def parseElipse(s, radii, xRotate, fA, fS, e):
     return points
 
 
+def offsetPolygon(points: list, offset:float, flag: bool):
+    newPoints = []
+    p1 = points[-2]
+    p2 = points[-1]
+    p3 = points[0]
+    initialMidpoint = [(p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2]
+    vec1 = Vector2d.fromPoints(p2, initialMidpoint)
+    vec2 = Vector2d.fromPoints(p2, p3)
+    perpVec = vec1.perpendicularUnit() * offset
+    if flag:
+        perpVec = perpVec.flip()
+
+    tempPoint = perpVec.addToPoint(initialMidpoint)
+    l1 = vec1.toLine(tempPoint)
+    angle = (vec1.angle + vec2.angle) / 2
+    l2 = Vector2d.fromPolar(angle).toLine(p2)
+    newPoints.append(l1.intersectionWith(l2))
+
+    for i in range(len(points)-1):
+        p1 = points[i-1]
+        p2 = points[i]
+        p3 = points[i+1]
+        prevNew = newPoints[-1]
+
+        v1 = Vector2d.fromPoints(p2, p1)
+        v2 = Vector2d.fromPoints(p2,p3)
+        angle = (v1.angle + v2.angle) / 2
+        perpVec = Vector2d.fromPolar(angle)
+        l1 = perpVec.toLine(p2)
+        l2 = v1.toLine(prevNew)
+        newPoints.append(l1.intersectionWith(l2))
+    newPoints.append(newPoints[0])
+    return newPoints
+
+
 def parsePolygon(pathString: str):
     onlyPoints = ""
     strokeWidth = 0
@@ -507,12 +542,23 @@ def parsePolygon(pathString: str):
     finalPoints = fixWeirdSVGrules(onlyPoints).split()
     print(["Polygon", finalPoints])
 
-    line = []
-    line.append([float(finalPoints[-2]), float(finalPoints[-1])])
+    lines = [[]]
+
+    initLine = []
+    #initLine.append([float(finalPoints[-2]), float(finalPoints[-1])])
     while len(finalPoints) > 0:
-        line.append([float(finalPoints.pop(0)), float(finalPoints.pop(0))])
-    print(line)
-    return [line]
+        initLine.append([float(finalPoints.pop(0)), float(finalPoints.pop(0))])
+
+    if strokeWidth != 0:
+        line1 = offsetPolygon(initLine, strokeWidth/2, False)
+        line1.insert(0, "offsetFalse")
+        line2 = offsetPolygon(initLine, strokeWidth/2, True)
+        line2.insert(0, "offsetTrue")
+        lines = [line1, line2]
+    else:
+        lines = [initLine]
+
+    return lines
 
 
 def parseGeometricLine(pathString: str):
