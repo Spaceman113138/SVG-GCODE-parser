@@ -79,7 +79,7 @@ def fixWeirdSVGrules(string: str):
 
     #remove extra spaces
     i = 0
-    while i < len(string):
+    while i < len(string) - 1:
         if string[i] == " " and string[i + 1] == " ":
             string = string[0:i] + string[i + 1:]
             i -= 1
@@ -242,10 +242,10 @@ def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
                     rawLines = parseGeometricPolyline(path)
                     lines.extend(adjustGroups(rawLines, transform, rotation))
 
-    #adjustScalePosition(desiredSize, desiredCenter, lines)
+    #lines = adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
     #print(gcode)
-    return gcode
+    return (gcode, lines)
 
 
 def pathStringToCommands(pathString: str):
@@ -461,7 +461,7 @@ def parseCubicBezie(s, c1, c2, e):
         y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
         nextPoint = [x,y]
         points.append(nextPoint)
-        t += 1/(length * 1)
+        t += 1/(length * 0.01)
 
     return points
 
@@ -481,7 +481,7 @@ def parseElipse(s, radii, xRotate, fA, fS, e):
         x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
         y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
         points.append([x,y])
-        t += 1/(length * 0.1)
+        t += 1/(length * 0.01)
     
     return points
 
@@ -959,7 +959,7 @@ def parseLinesIntoGcode(lines: list[list[list]]):
     return finalGcode
 
 
-def adjustScalePosition(desiredMaxSize, desiredCenter, lines):
+def adjustScalePosition(maxSize, desiredCenter, lines):
     global scaleFactor
     global shift
 
@@ -989,10 +989,28 @@ def adjustScalePosition(desiredMaxSize, desiredCenter, lines):
         largest = xSize
     else:
         largest = ySize
-    scaleFactor = desiredMaxSize/largest
+    
+    if largest > maxSize:
+        scaleFactor = maxSize/largest
+    else:
+        scaleFactor = 1
 
     center = [(minX + maxX) / 2, (minY + maxY) / 2]
     shift = [-center[0] * scaleFactor + desiredCenter[0], -center[1] * scaleFactor + desiredCenter[0]]
+
+    newLines = []
+    for line in lines:
+        newLine = []
+        for point in line:
+            if str(point[0]).isalpha():
+                newLine.append(point)
+            else:
+                point = [point[0] * scaleFactor, point[1] * scaleFactor]
+                translatedPoint = util.addPoints(point, shift)
+                newLine.append(translatedPoint)
+        newLines.append(newLine)
+
+    return newLines
 
 
 def adjustGroups(lines, translation, rotation):
