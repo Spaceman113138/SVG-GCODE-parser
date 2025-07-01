@@ -53,7 +53,7 @@ def aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers):
         newPoint = [x,y]
         length += math.dist(lastPoint, newPoint)
         lastPoint = newPoint.copy()
-        t = round(t + 0.05, 5)
+        t = round(t + 0.01, 5)
     
     return length
 

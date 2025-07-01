@@ -242,10 +242,10 @@ def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
                     rawLines = parseGeometricPolyline(path)
                     lines.extend(adjustGroups(rawLines, transform, rotation))
 
-    #lines = adjustScalePosition(desiredSize, desiredCenter, lines)
+    adjustScalePosition(desiredSize, desiredCenter, lines)
     gcode = parseLinesIntoGcode(lines)
     #print(gcode)
-    return (gcode, lines)
+    return gcode
 
 
 def pathStringToCommands(pathString: str):
@@ -455,13 +455,14 @@ def parseCubicBezie(s, c1, c2, e):
     points = []
     length = util.aproxLenCubic(s, c1, c2, e)
     t = 0
+    step = step = 1 / (length / .75)
     while t <= 1:
         t = util.clamp(0, 1, t)
         x = (1-t)*(1-t)*(1-t)*s[0] + 3*(1-t)*(1-t)*t*c1[0] + 3*(1-t)*t*t*c2[0] + t*t*t*e[0]
         y = (1-t)*(1-t)*(1-t)*s[1] + 3*(1-t)*(1-t)*t*c1[1] + 3*(1-t)*t*t*c2[1] + t*t*t*e[1]
         nextPoint = [x,y]
         points.append(nextPoint)
-        t += 1/(length * 0.01)
+        t += step
 
     return points
 
@@ -476,12 +477,15 @@ def parseElipse(s, radii, xRotate, fA, fS, e):
     #Get points to draw
     length = util.aproxLenElipse(startAngle, deltaAngle, xRotate, radii, centers)
     t = 0
+    step = step = 1 / (length / .75)
+    # if length < 5.0:
+    #     step = 1 / (length / .25)
     while t <= 1:
         angle = util.lerp(util.clamp(0, 1.0, t), 0, deltaAngle) + startAngle
         x = radii[0] * math.cos(angle) * math.cos(xRotate) - radii[1] * math.sin(angle) * math.sin(xRotate) + centers[0]
         y = radii[0] * math.cos(angle) * math.sin(xRotate) + radii[1] * math.sin(angle) * math.cos(xRotate) + centers[1]
         points.append([x,y])
-        t += 1/(length * 0.01)
+        t += step
     
     return points
 
@@ -944,6 +948,8 @@ def parseLinesIntoGcode(lines: list[list[list]]):
     finalGcode += f"G0 f{travelSpeed} \n"
     finalGcode += f"G1 f{drawSpeed} \n"
 
+    newLines = []
+
     for line in lines:
         line = scaleLine(line)
         finalGcode += "G0 Z10 \n"
@@ -956,7 +962,8 @@ def parseLinesIntoGcode(lines: list[list[list]]):
                 finalGcode += f"G1 X{point[0]} Y{point[1]} \n"
         finalGcode += "G0 Z10 \n"
 
-    return finalGcode
+        newLines.append(line)
+    return (finalGcode, newLines)
 
 
 def adjustScalePosition(maxSize, desiredCenter, lines):
@@ -995,22 +1002,10 @@ def adjustScalePosition(maxSize, desiredCenter, lines):
     else:
         scaleFactor = 1
 
-    center = [(minX + maxX) / 2, (minY + maxY) / 2]
-    shift = [-center[0] * scaleFactor + desiredCenter[0], -center[1] * scaleFactor + desiredCenter[0]]
+    center = [(minX + maxX) / 2 * scaleFactor, (minY + maxY) / 2 * scaleFactor]
+    shift = [-center[0] + desiredCenter[0], -center[1] + desiredCenter[0]]
 
-    newLines = []
-    for line in lines:
-        newLine = []
-        for point in line:
-            if str(point[0]).isalpha():
-                newLine.append(point)
-            else:
-                point = [point[0] * scaleFactor, point[1] * scaleFactor]
-                translatedPoint = util.addPoints(point, shift)
-                newLine.append(translatedPoint)
-        newLines.append(newLine)
-
-    return newLines
+    return
 
 
 def adjustGroups(lines, translation, rotation):

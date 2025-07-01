@@ -10,17 +10,29 @@ from tkinter.filedialog import askopenfilename, askdirectory
 printBedSize = 200
 drawingScale = 1.0
 lines = []
+translate = [0,0]
+rotate = 0
+prevCenter = (0,0)
+redraw = False
+fileName = ""
+filePath = ""
 
-def openSVG(textbox: ctk.CTkTextbox, image: ctk.CTkCanvas):
-    global lines
+def openSVG(textbox: ctk.CTkTextbox, image: ctk.CTkCanvas, saveButton: ctk.CTkButton):
+    global lines, fileName, filePath
     file = askopenfilename(filetypes=[("svg", "svg")])
     if file == "":
         return
+    fileName = file.split("\\")[-1].split("/")[-1]
     result = SVGparser.parseSVG(file, printBedSize, [printBedSize/2, printBedSize/2])
     pyperclip.copy(result[0])
+    filePath = file
 
+    textbox.configure(state=tk.NORMAL)
     textbox.delete("0.0", "end")
     textbox.insert("0.0", result[0])  # insert at line 0 character 0
+    textbox.configure(state=tk.DISABLED)
+
+    saveButton.configure(state=tk.NORMAL)
 
     lines = []
     for line in result[1]:
@@ -32,11 +44,14 @@ def openSVG(textbox: ctk.CTkTextbox, image: ctk.CTkCanvas):
                 points.append(line[i])
         lines.append(points)
 
-    redrawCanvas(image)
+    redrawCanvas(image, True)
 
 
 def saveGcode():
     directory = askdirectory()
+    file = open(directory + "/" + fileName + ".gcode", "w")
+    file.write(SVGparser.parseSVG(filePath, 100, [printBedSize/2, printBedSize/2])[0])
+    file.close()
 
 
 def getCanvasCenter(canvas: ctk.CTkCanvas) -> tuple:
@@ -48,8 +63,14 @@ def getCanvasCenter(canvas: ctk.CTkCanvas) -> tuple:
     return (width/2, height/2)
 
 
-def redrawCanvas(canvas: ctk.CTkCanvas):
+def redrawCanvas(canvas: ctk.CTkCanvas, force: bool):
     center = getCanvasCenter(canvas)
+    global redraw
+
+    if not redraw and not force:
+        return
+    
+    redraw = False
 
     smallest = min(center[0] * 2, center[1] * 2)
     desiredSize = smallest - 100
@@ -58,12 +79,80 @@ def redrawCanvas(canvas: ctk.CTkCanvas):
     canvas.delete("all")
     p1 = (center[0] - desiredSize/2, center[1] - desiredSize/2)
     p2 = (center[0] + desiredSize/2, center[1] + desiredSize/2)
-    print(p1, p2)
     canvas.create_rectangle(p1[0], p1[1], p2[0], p2[1], width = 4, outline="#2400c5")
 
     for line in lines:
         for i in range(len(line) - 1):
-            canvas.create_line(line[i][0] + center[0], line[i][1] + center[1], line[i+1][0] + center[0], line[i+1][1] + center[1], fill="#ffffff")
+            point = [line[i][0] * scale + translate[0], line[i][1] * scale + translate[1]]
+            point2 = [line[i+1][0] * scale + translate[0], line[i+1][1] * scale + translate[1]]
+            canvas.create_line(point[0] + p1[0], point[1] + p1[1], point2[0] + p1[0], point2[1] + p1[1], fill="#ffffff")
+
+
+def addTempScreen(canvas: ctk.CTkCanvas):
+    global prevCenter
+    center = getCanvasCenter(canvas)
+    
+    if lines == []:
+        redrawCanvas(canvas, True)
+    elif prevCenter != center:
+        center = getCanvasCenter(canvas)
+        canvas.delete("all")
+        canvas.create_text(center[0],center[1], text="click to redraw",width=200)
+        global redraw
+        redraw = True
+
+
+    prevCenter = center
+
+def updateXtranslate(x):
+    translate[0] = x
+
+def updateYtranslate(y):
+    translate[1] = y
+
+def updateScale(scale):
+    drawingScale = scale
+
+def updateRotation(rot):
+    rotate = rot
+
+
+class NumInput(ctk.CTkFrame):
+
+    def __init__(self, parent, name: str, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.grid_columnconfigure((0,2), weight=0)
+        self.grid_columnconfigure(1, weight=1000)
+        self.grid_rowconfigure((0,1), weight=0)
+
+        self.label = ctk.CTkLabel(self, width=10, corner_radius=10, text=name)
+        self.label.grid(row=0, column=0, padx=(10,0), pady=10, sticky="EW", rowspan=2)
+
+        self.inputValue: tk.StringVar = tk.StringVar()
+        self.inputValue.set("0")
+        self.lastGoodValue = 0
+        self.input = ctk.CTkEntry(self, width=50, corner_radius=10, textvariable=self.inputValue, placeholder_text="0")
+        self.input.grid(row=0, column=1, padx=(0,10), pady=10, sticky="EW", rowspan=2)
+        self.input.bind("<FocusOut>", lambda event:self.validateNum())
+
+        self.upButton = ctk.CTkButton(self, width=50, corner_radius=5, text="˄", height=20, command=lambda: self.adjustInput(10))
+        self.upButton.grid(row=0, column=2, padx=5, pady=5, sticky = "N")
+
+        self.downButton = ctk.CTkButton(self, width=50, corner_radius=5, text="˅", height=20, command=lambda: self.adjustInput(-10))
+        self.downButton.grid(row=1, column=2, padx=5, pady=5, sticky = "S")
+
+
+    def validateNum(self):
+        if not self.inputValue.get().isnumeric():
+            self.inputValue.set(str(self.lastGoodValue))
+        else:
+            self.lastGoodValue = float(self.inputValue.get())
+
+    def adjustInput(self, value:float):
+        self.lastGoodValue += value
+        self.inputValue.set(str(self.lastGoodValue))
+
+
 
 
 ctk.set_appearance_mode("dark")
@@ -80,58 +169,33 @@ openButton = ctk.CTkButton(app, corner_radius=10, text="Open SVG", width = 50)
 openButton.grid(row = 0, column = 0, padx = 30, pady = 10, sticky = "EW", columnspan = 2)
 
 
-xAdjFrame = ctk.CTkFrame(app, corner_radius=10, width = 50)
-xAdjFrame.grid_columnconfigure((0), weight=0)
-xAdjFrame.grid_columnconfigure(1, weight=10)
+xAdjFrame = NumInput(app, "Translate X: ")
 xAdjFrame.grid(row = 1, column = 0, padx = 30, pady = 10, sticky = "EW")
-xAdjLabel = ctk.CTkLabel(xAdjFrame, corner_radius = 10, text="Translate X: ", width = 10)
-xAdjLabel.grid(row=0, column=0, padx = (10,0), pady = 10)
-xAdj = ctk.CTkEntry(xAdjFrame, width = 50)
-xAdj.grid(row = 0, column = 1, padx = (0,10), pady = 10, sticky = "EW")
 
-
-yAdjFrame = ctk.CTkFrame(app, corner_radius=10, width = 50)
-xAdjFrame.grid_columnconfigure((0), weight=0)
-xAdjFrame.grid_columnconfigure(1, weight=10)
+yAdjFrame = NumInput(app, "Translate Y: ")
 yAdjFrame.grid(row = 1, column = 1, padx = 30, pady = 10, sticky = "EW")
-yAdjLabel = ctk.CTkLabel(yAdjFrame, corner_radius=10, text="Y Translate: ", width = 10)
-yAdjLabel.grid(row=0, column=0, padx = (10,0), pady = 10)
-yAdj = ctk.CTkEntry(yAdjFrame, width=50)
-yAdj.grid(row = 0, column = 1, padx = (0,10), pady = 10, sticky = "EW")
 
-
-scaleFrame = ctk.CTkFrame(app, corner_radius=10, width = 50)
-scaleFrame.grid_columnconfigure((0), weight=0)
-scaleFrame.grid_columnconfigure(1, weight=10)
+scaleFrame = NumInput(app, "Scale: ")
 scaleFrame.grid(row = 2, column = 0, padx = 30, pady = 10, sticky = "EW")
-scaleLabel = ctk.CTkLabel(scaleFrame, corner_radius = 10, text="Scale: ", width = 10)
-scaleLabel.grid(row=0, column=0, padx = (10,0), pady = 10, sticky = "EW")
-scale = ctk.CTkEntry(scaleFrame, width = 50)
-scale.grid(row = 0, column = 1, padx = (0,10), pady = 10, sticky = "EW")
 
-
-rotateFrame = ctk.CTkFrame(app, corner_radius=10, width = 50)
-rotateFrame.grid_columnconfigure((0), weight=0)
-rotateFrame.grid_columnconfigure(1, weight=10)
+rotateFrame = NumInput(app, "Rotate: ")
 rotateFrame.grid(row = 2, column = 1, padx = 30, pady = 10, sticky = "WE")
-rotateLabel = ctk.CTkLabel(rotateFrame, corner_radius = 10, text="Rotate: ", width = 10)
-rotateLabel.grid(row=0, column=0, padx = (10,0), pady = 10, sticky="EW")
-rotate = ctk.CTkEntry(rotateFrame, width = 50)
-rotate.grid(row = 0, column = 1, padx = (0,10), pady = 10, sticky = "EW")
 
 
-saveButton = ctk.CTkButton(app, corner_radius = 10, text = "Save Gcode", command = saveGcode, width = 50)
+saveButton = ctk.CTkButton(app, corner_radius = 10, text = "Save Gcode", command = saveGcode, width = 50, state=tk.DISABLED)
 saveButton.grid(row = 3, column = 0, columnspan = 2, padx = 30, pady = 10, sticky = "EW")
 
-textFrame = ctk.CTkTextbox(app, wrap = "none", width = 50, text_color="#ffffff")
+textFrame = ctk.CTkTextbox(app, wrap = "none", width = 50, text_color="#ffffff", state=tk.DISABLED)
 textFrame.grid(row = 4, column = 0, columnspan = 2, padx = 30, pady = 10, sticky = "NSEW")
 
 drawFrame = ctk.CTkCanvas(app)
 drawFrame.configure(bg="#323232", background="#323232", highlightcolor="#323232")
 drawFrame.grid(row = 0, column = 2, padx = 50, pady = 20, rowspan = 5, sticky = "NSEW")
-redrawCanvas(drawFrame)
+redrawCanvas(drawFrame, True)
 
-app.bind("<Configure>", lambda event:redrawCanvas(drawFrame))
-openButton.configure(command = openSVG(textFrame, drawFrame))
+openButton.configure(command = lambda : openSVG(textFrame, drawFrame, saveButton))
+app.bind("<ButtonRelease-1>", lambda event:redrawCanvas(drawFrame, False))
+app.bind("<Configure>", lambda event: addTempScreen(drawFrame))
+
 
 app.mainloop()
