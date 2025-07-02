@@ -41,7 +41,14 @@ def readPNG(path: str):
         print(len(allData))
         raise Exception("Data is not of expepcted size")
     
-    pixleData = parseData(allData, channels, perRow, bitDepth, colorType)
+    pallet = []
+
+    if colorType == 3:
+        for chunk in chunks:
+            if chunk["type"] == "PLTE":
+                pallet = parsePallet(chunk["data"])
+
+    pixleData = parseData(allData, channels, perRow, bitDepth, colorType, pallet)
 
     #print(reconstructedData)
     fig, ax = plt.subplots()
@@ -54,6 +61,29 @@ def parseBytesToInts(line:bytes, depth: int) -> list[int]:
     values: list[int] = []
 
     match depth:
+        case 1:
+            for byte in line:
+                byte = int(byte)
+                values.append(byte >> 7 & 0b1) #grab left most bit
+                values.append(byte >> 6 & 0b1) #grab next leftmost bit
+                values.append(byte >> 5 & 0b1)
+                values.append(byte >> 4 & 0b1)
+                values.append(byte >> 3 & 0b1)
+                values.append(byte >> 2 & 0b1)
+                values.append(byte >> 1 & 0b1)
+                values.append(byte & 0b1)
+        case 2:
+            for byte in line:
+                byte = int(byte)
+                values.append(byte >> 6 & 0b11) #grab left 2 bits
+                values.append(byte >> 4 & 0b11) #grab next 2 bits
+                values.append(byte >> 2 & 0b11)
+                values.append(byte & 0b11)
+        case 4:
+            for byte in line:
+                byte = int(byte)
+                values.append(byte >> 4 & 0b1111) #grab left 4 bits
+                values.append(byte & 0b1111)#grab right 4 bits
         case 8:
             for byte in line:
                 values.append(int(byte))
@@ -67,7 +97,7 @@ def parseBytesToInts(line:bytes, depth: int) -> list[int]:
     return values 
 
 
-def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype):
+def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype, pallet):
     reconstructedLines: list[bytes] = reconstructData(data, int(channels), int(depth), int(bytesPerLine))
 
     combinedData: list[int] = []
@@ -114,11 +144,33 @@ def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype):
                 w = int(w * adjustment)
 
                 pixleData.append([w,w,w,255])
+        case 1 if colortype == 3:
+            while len(combinedData) > 0:
+                index = combinedData.pop(0)
+                pixleData.append(pallet[index])
         case _:
             raise Exception("I should really implement this")
 
         
     return pixleData
+
+
+def parsePallet(data: bytes):
+    data = bytearray(data)
+
+    pallet = []
+
+    if len(data) % 3 != 0:
+        raise Exception("Must be a multiple of 3")
+
+    while len(data) != 0:
+        r = int(data.pop(0))
+        g = int(data.pop(0))
+        b = int(data.pop(0))
+        a = 255
+        pallet.append([r,g,b,a])
+
+    return pallet
 
 
 def reconstructData(data, channels: int, depth, bytesPerLine:int):
@@ -185,7 +237,6 @@ def reconstructData(data, channels: int, depth, bytesPerLine:int):
                 raise Exception("Invalid Filter")
 
     return reconstructedLines
-
 
 
 
@@ -263,6 +314,4 @@ def parseIDHR(idhrChunk: dict):
 
 
 
-
-
-readPNG("testPNG\\basn0g16.png")
+readPNG("testPNG\\basn3p02.png")
