@@ -44,7 +44,9 @@ def readPNG(path: str):
     pixleData = parseData(allData, channels, perRow, bitDepth, colorType)
 
     #print(reconstructedData)
-    plt.imshow(np.array(pixleData).reshape((height, width, 4)))
+    fig, ax = plt.subplots()
+    ax.imshow(np.array(pixleData).reshape((height, width, 4)))
+    ax.set_facecolor("black")
     plt.show()
 
 
@@ -74,22 +76,47 @@ def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype):
         combinedData.extend(parseBytesToInts(line, depth))
     
     depthByte = int(depth / 8)
+    adjustment = 255 / ((2 ** depth) - 1)
 
     pixleData = []
     match channels:
         case 4:
-            i = 0
             while len(combinedData) > 0:
-                r,g,b,a = combinedData[i * 4: (i+1) * 4]
-                combinedData = combinedData[(i+1) * 4:]
-                r = int(r / (2 ** depth - 1) * 255)
-                g = int(g / (2 ** depth - 1) * 255)
-                b = int(b / (2 ** depth - 1) * 255)
-                a = int(a / (2 ** depth - 1) * 255)
+                r,g,b,a = combinedData[0: 4]
+                combinedData = combinedData[4:]
+                r = int(r / adjustment)
+                g = int(g / adjustment)
+                b = int(b / adjustment)
+                a = int(a / adjustment)
 
                 pixleData.append([r,g,b,a])
+
+        case 3:
+            while len(combinedData) > 0:
+                r,g,b, = combinedData[0: 3]
+                combinedData = combinedData[3:]
+                r = int(r * adjustment)
+                g = int(g * adjustment)
+                b = int(b * adjustment)
+
+                pixleData.append([r,g,b,255])
+        case 2:
+            while len(combinedData) > 0:
+                w,a = combinedData[0:2]
+                combinedData = combinedData[2:]
+                w = int(w * adjustment)
+                a = int(a * adjustment)
+                
+                pixleData.append([w,w,w,a])
+        case 1 if colortype == 0:
+            while len(combinedData) > 0:
+                w = combinedData.pop(0)
+                w = int(w * adjustment)
+
+                pixleData.append([w,w,w,255])
         case _:
             raise Exception("I should really implement this")
+
         
     return pixleData
 
@@ -113,11 +140,11 @@ def reconstructData(data, channels: int, depth, bytesPerLine:int):
         filter = line[0]
         line = line[1:]
         newLine: bytes = b""
+        print(filter)
         match filter:
             case 0:
                 reconstructedLines.append(line)
             case 1:
-                print(line.hex("/"))
                 for i in range(len(line)):
                     x = line[i]
                     a = 0 if i < bpp else newLine[i-bpp]
@@ -125,13 +152,11 @@ def reconstructData(data, channels: int, depth, bytesPerLine:int):
                     newLine += newValue.to_bytes(1)
                 reconstructedLines.append(newLine)
             case 2:
-                raise Exception("All wrong")
-                i = 0
-                while i < len(line):
+                for i in range(len(line)):
                     x = line[i]
                     b = 0 if len(reconstructedLines) == 0 else reconstructedLines[-1][i]
-                    newLine.append((x + b) % 256)
-                    i += depthOffset
+                    newValue = (x + b) % 256
+                    newLine += newValue.to_bytes(1)
                 reconstructedLines.append(newLine)
             case 3:
                 raise Exception("All wrong")
@@ -146,7 +171,7 @@ def reconstructData(data, channels: int, depth, bytesPerLine:int):
                 reconstructedLines.append(newLine)
             case 4:
                 i = 0
-                #print(line)
+                print(line)
                 while i < len(line):
                     x = line[i]
                     a = 0 if i < bpp else newLine[i-bpp]
@@ -240,4 +265,4 @@ def parseIDHR(idhrChunk: dict):
 
 
 
-readPNG("testPNG\\basn6a16.png")
+readPNG("testPNG\\basn0g16.png")
