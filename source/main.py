@@ -26,8 +26,7 @@ def openSVG(textbox: ctk.CTkTextbox, image: ctk.CTkCanvas, saveButton: ctk.CTkBu
     if file == "":
         return
     fileName = file.split("\\")[-1].split("/")[-1]
-    result = SVGparser.parseSVG(file, printBedSize, [printBedSize/2, printBedSize/2])
-    pyperclip.copy(result[0])
+    result = SVGparser.parseSVG(file, printBedSize, [0,0])
     filePath = file
 
     textbox.configure(state=tk.NORMAL)
@@ -50,11 +49,17 @@ def openSVG(textbox: ctk.CTkTextbox, image: ctk.CTkCanvas, saveButton: ctk.CTkBu
     redrawCanvas(image, True)
 
 
-def saveGcode():
+def saveGcode(textbox: ctk.CTkTextbox):
     directory = askdirectory()
     file = open(directory + "/" + fileName + ".gcode", "w")
-    file.write(SVGparser.parseSVG(filePath, 100, [printBedSize/2, printBedSize/2])[0])
+    result = SVGparser.parseSVG(filePath, 100, [printBedSize/2 + translate[0], printBedSize/2 + translate[1]], math.radians(rotate), drawingScale, True)
+    file.write(result[0])
     file.close()
+
+    textbox.configure(state=tk.NORMAL)
+    textbox.delete("0.0", "end")
+    textbox.insert("0.0", result[0])  # insert at line 0 character 0
+    textbox.configure(state=tk.DISABLED)
 
 
 def getCanvasCenter(canvas: ctk.CTkCanvas) -> tuple:
@@ -68,7 +73,7 @@ def getCanvasCenter(canvas: ctk.CTkCanvas) -> tuple:
 
 def redrawCanvas(canvas: ctk.CTkCanvas, force: bool):
     center = getCanvasCenter(canvas)
-    global redraw,drawingScale, rotate
+    global redraw,drawingScale,rotate
 
     if not redraw and not force:
         return
@@ -88,10 +93,12 @@ def redrawCanvas(canvas: ctk.CTkCanvas, force: bool):
 
     for line in lines:
         for i in range(len(line) - 1):
-            transform = [translate[0], -translate[1]]
+            transform = [translate[0] * scale, -translate[1] * scale]
+            point = [line[i][0] * scale, line[i][1]]
+            point2 = [line[i+1][1] * scale, line[i][1] * scale]
             point = util.transform(line[i], transform, drawingScale, math.radians(rotate))
             point2 = util.transform(line[i + 1], transform, drawingScale, math.radians(rotate))
-            canvas.create_line(point[0] + p1[0], point[1] + p1[1], point2[0] + p1[0], point2[1] + p1[1], fill="#ffffff")
+            canvas.create_line(point[0] + center[0], point[1] + center[1], point2[0] + center[0], point2[1] + center[1], fill="#ffffff")
 
 
 def addTempScreen(canvas: ctk.CTkCanvas):
@@ -197,14 +204,14 @@ xAdjFrame.grid(row = 1, column = 0, padx = 30, pady = 10, sticky = "EW")
 yAdjFrame = NumInput(app, "Translate Y: ", 10, lambda newValue: updateYtranslate(newValue), lambda: redrawCanvas(drawFrame, True))
 yAdjFrame.grid(row = 1, column = 1, padx = 30, pady = 10, sticky = "EW")
 
-scaleFrame = NumInput(app, "Scale: ", 1, lambda newValue: updateScale(newValue), lambda: redrawCanvas(drawFrame, True))
+scaleFrame = NumInput(app, "Scale: ", 0.25, lambda newValue: updateScale(newValue), lambda: redrawCanvas(drawFrame, True))
 scaleFrame.grid(row = 2, column = 0, padx = 30, pady = 10, sticky = "EW")
 
 rotateFrame = NumInput(app, "Rotate: ", 15, lambda newValue: updateRotation(newValue), lambda: redrawCanvas(drawFrame, True))
 rotateFrame.grid(row = 2, column = 1, padx = 30, pady = 10, sticky = "WE")
 
 
-saveButton = ctk.CTkButton(app, corner_radius = 10, text = "Save Gcode", command = saveGcode, width = 50, state=tk.DISABLED)
+saveButton = ctk.CTkButton(app, corner_radius = 10, text = "Save Gcode", command = lambda: saveGcode(textFrame), width = 50, state=tk.DISABLED)
 saveButton.grid(row = 3, column = 0, columnspan = 2, padx = 30, pady = 10, sticky = "EW")
 
 textFrame = ctk.CTkTextbox(app, wrap = "none", width = 50, text_color="#ffffff", state=tk.DISABLED)

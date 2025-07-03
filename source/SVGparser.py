@@ -5,8 +5,12 @@ from util import Vector2d
 
 scaleFactor = 1.0
 shift = [0,0]
-travelSpeed = 40
-drawSpeed = 20
+travelSpeed = 80
+drawSpeed = 40
+center = [0,0]
+rotate = 0
+requireScale = False
+requiredScale = 1.0
 
 
 
@@ -89,11 +93,19 @@ def fixWeirdSVGrules(string: str):
 
 
 def scaleLine(line: list[list]):
+    global scaleFactor, requiredScale, requireScale, rotate
     scaledLine = []
     for point in line:
         if not str(point[0]).isalpha():
-            x = round(point[0] * scaleFactor + shift[0], 5)
-            y = round(point[1] * scaleFactor + shift[1], 5)
+            bringToCenter = [point[0] - center[0], point[1] - center[1]]
+            scale = requiredScale if requireScale else scaleFactor
+
+            transform = [center[0] + shift[0], center[1] + shift[1]]
+
+            newPoint = util.transform(bringToCenter, transform, scale, rotate)
+
+            x = round(newPoint[0], 5)
+            y = round(newPoint[1], 5)
             scaledLine.append([x,y])
         else:
             scaledLine.append(point)
@@ -173,7 +185,14 @@ def centerParameterization(s, radii, xRotate, fA, fS, e):
 
 #Main part of code
 
-def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float]):
+def parseSVG(pathToFile: str, desiredSize:float, desiredCenter: list[float], desiredRotation: float = 0, forcedScale:float = 1.0, forceScale = False):
+    global requireScale, rotate, requiredScale
+    requireScale = forceScale
+    requiredScale = forcedScale
+    rotate = desiredRotation
+
+
+
     rawString = open(pathToFile, "r").read()
 
     groups = []
@@ -967,8 +986,7 @@ def parseLinesIntoGcode(lines: list[list[list]]):
 
 
 def adjustScalePosition(maxSize, desiredCenter, lines):
-    global scaleFactor
-    global shift
+    global scaleFactor, shift, center
 
     minX = math.inf
     minY = math.inf
