@@ -1,5 +1,21 @@
 import math
 
+
+def isNum(value: str):
+    try:
+        float(value)
+        return True
+    except:
+        return False
+
+
+def transform(point: list, transform: list, scale: float, rotate: float):
+    point = [point[0] * math.cos(rotate) + point[1] * math.sin(rotate),
+             point[0] * -math.sin(rotate) + point[1] * math.cos(rotate)]
+    point = [point[0] * scale, point[1] * scale]
+    return [point[0] + transform[0], point[1] + transform[1]]
+
+
 def clamp(min, max, val):
     if max < val:
         return max

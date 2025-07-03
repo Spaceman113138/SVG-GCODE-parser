@@ -52,14 +52,24 @@ def readPNG(path: str):
     pixleData = parseData(allData, channels, perRow, bitDepth, colorType, pallet, (width, height))
 
     #cv.imshow("image.png", arrayForm)
-    edges = cv.Canny(pixleData, 0, 300) # type: ignore
+    dst =  cv.Canny(pixleData, 100, 200) # type: ignore
+    
+    cst, hierarchy = cv.findContours(dst, cv.RETR_FLOODFILL, cv.CHAIN_APPROX_SIMPLE)
 
-    plt.subplot(121),plt.imshow(pixleData,cmap = 'gray') # type: ignore
-    plt.title('Original Image'), plt.xticks([]), plt.yticks([]) # type: ignore
-    plt.subplot(122),plt.imshow(edges,cmap = 'gray') # type: ignore
-    plt.title('Edge Image'), plt.xticks([]), plt.yticks([]) # type: ignore
+    final = cv.drawContours(dst, cst, -1, (0, 255, 0), 3)
+    
+    cv.imshow("Source", pixleData) #type: ignore
+    cv.imshow("Contours", final)
+    
+    cv.waitKey()
 
-    plt.show()
+
+    # plt.subplot(121),plt.imshow(pixleData,cmap = 'gray') # type: ignore
+    # plt.title('Original Image'), plt.xticks([]), plt.yticks([]) # type: ignore
+    # plt.subplot(122),plt.imshow(edges,cmap = 'gray') # type: ignore
+    # plt.title('Edge Image'), plt.xticks([]), plt.yticks([]) # type: ignore
+
+    # plt.show()
 
     # #print(reconstructedData)
     # fig, ax = plt.subplots()
@@ -305,6 +315,7 @@ def parseIDHR(idhrChunk: dict):
             raise Exception("Invalid Color Type")
 
     return (width, height, bitDepth, colorType)
+
 
 
 

@@ -3,6 +3,9 @@ import pyperclip
 import tkinter as tk
 import customtkinter as ctk
 from tkinter.filedialog import askopenfilename, askdirectory
+import threading
+import util
+import math
 
 # path = "testSVG\\test.svg"
 # pyperclip.copy(SVGparser.parseSVG(path, 300, [0,0]))
@@ -65,7 +68,7 @@ def getCanvasCenter(canvas: ctk.CTkCanvas) -> tuple:
 
 def redrawCanvas(canvas: ctk.CTkCanvas, force: bool):
     center = getCanvasCenter(canvas)
-    global redraw
+    global redraw,drawingScale, rotate
 
     if not redraw and not force:
         return
@@ -81,10 +84,13 @@ def redrawCanvas(canvas: ctk.CTkCanvas, force: bool):
     p2 = (center[0] + desiredSize/2, center[1] + desiredSize/2)
     canvas.create_rectangle(p1[0], p1[1], p2[0], p2[1], width = 4, outline="#2400c5")
 
+    print(translate)
+
     for line in lines:
         for i in range(len(line) - 1):
-            point = [line[i][0] * scale + translate[0], line[i][1] * scale + translate[1]]
-            point2 = [line[i+1][0] * scale + translate[0], line[i+1][1] * scale + translate[1]]
+            transform = [translate[0], -translate[1]]
+            point = util.transform(line[i], transform, drawingScale, math.radians(rotate))
+            point2 = util.transform(line[i + 1], transform, drawingScale, math.radians(rotate))
             canvas.create_line(point[0] + p1[0], point[1] + p1[1], point2[0] + p1[0], point2[1] + p1[1], fill="#ffffff")
 
 
@@ -111,16 +117,22 @@ def updateYtranslate(y):
     translate[1] = y
 
 def updateScale(scale):
+    global drawingScale
     drawingScale = scale
 
 def updateRotation(rot):
+    global rotate
     rotate = rot
 
 
 class NumInput(ctk.CTkFrame):
 
-    def __init__(self, parent, name: str, **kwargs):
+    def __init__(self, parent, name: str, amount: float, update, redraw, **kwargs):
         super().__init__(parent, **kwargs)
+
+        self.updateFunc = update
+        self.redrawFunc = redraw
+
         self.grid_columnconfigure((0,2), weight=0)
         self.grid_columnconfigure(1, weight=1000)
         self.grid_rowconfigure((0,1), weight=0)
@@ -135,22 +147,26 @@ class NumInput(ctk.CTkFrame):
         self.input.grid(row=0, column=1, padx=(0,10), pady=10, sticky="EW", rowspan=2)
         self.input.bind("<FocusOut>", lambda event:self.validateNum())
 
-        self.upButton = ctk.CTkButton(self, width=50, corner_radius=5, text="˄", height=20, command=lambda: self.adjustInput(10))
+        self.upButton = ctk.CTkButton(self, width=50, corner_radius=5, text="˄", height=20, command=lambda: self.adjustInput(amount))
         self.upButton.grid(row=0, column=2, padx=5, pady=5, sticky = "N")
 
-        self.downButton = ctk.CTkButton(self, width=50, corner_radius=5, text="˅", height=20, command=lambda: self.adjustInput(-10))
+        self.downButton = ctk.CTkButton(self, width=50, corner_radius=5, text="˅", height=20, command=lambda: self.adjustInput(-amount))
         self.downButton.grid(row=1, column=2, padx=5, pady=5, sticky = "S")
 
 
     def validateNum(self):
-        if not self.inputValue.get().isnumeric():
+        if not util.isNum(self.inputValue.get()):
             self.inputValue.set(str(self.lastGoodValue))
         else:
             self.lastGoodValue = float(self.inputValue.get())
+            self.updateFunc(self.lastGoodValue)
+            self.redrawFunc()
+            
 
     def adjustInput(self, value:float):
         self.lastGoodValue += value
         self.inputValue.set(str(self.lastGoodValue))
+        self.validateNum()
 
 
 
@@ -169,16 +185,22 @@ openButton = ctk.CTkButton(app, corner_radius=10, text="Open SVG", width = 50)
 openButton.grid(row = 0, column = 0, padx = 30, pady = 10, sticky = "EW", columnspan = 2)
 
 
-xAdjFrame = NumInput(app, "Translate X: ")
+drawFrame = ctk.CTkCanvas(app)
+drawFrame.configure(bg="#323232", background="#323232", highlightcolor="#323232")
+drawFrame.grid(row = 0, column = 2, padx = 50, pady = 20, rowspan = 5, sticky = "NSEW")
+redrawCanvas(drawFrame, True)
+
+
+xAdjFrame = NumInput(app, "Translate X: ", 10, lambda newValue: updateXtranslate(newValue), lambda: redrawCanvas(drawFrame, True))
 xAdjFrame.grid(row = 1, column = 0, padx = 30, pady = 10, sticky = "EW")
 
-yAdjFrame = NumInput(app, "Translate Y: ")
+yAdjFrame = NumInput(app, "Translate Y: ", 10, lambda newValue: updateYtranslate(newValue), lambda: redrawCanvas(drawFrame, True))
 yAdjFrame.grid(row = 1, column = 1, padx = 30, pady = 10, sticky = "EW")
 
-scaleFrame = NumInput(app, "Scale: ")
+scaleFrame = NumInput(app, "Scale: ", 1, lambda newValue: updateScale(newValue), lambda: redrawCanvas(drawFrame, True))
 scaleFrame.grid(row = 2, column = 0, padx = 30, pady = 10, sticky = "EW")
 
-rotateFrame = NumInput(app, "Rotate: ")
+rotateFrame = NumInput(app, "Rotate: ", 15, lambda newValue: updateRotation(newValue), lambda: redrawCanvas(drawFrame, True))
 rotateFrame.grid(row = 2, column = 1, padx = 30, pady = 10, sticky = "WE")
 
 
@@ -188,13 +210,8 @@ saveButton.grid(row = 3, column = 0, columnspan = 2, padx = 30, pady = 10, stick
 textFrame = ctk.CTkTextbox(app, wrap = "none", width = 50, text_color="#ffffff", state=tk.DISABLED)
 textFrame.grid(row = 4, column = 0, columnspan = 2, padx = 30, pady = 10, sticky = "NSEW")
 
-drawFrame = ctk.CTkCanvas(app)
-drawFrame.configure(bg="#323232", background="#323232", highlightcolor="#323232")
-drawFrame.grid(row = 0, column = 2, padx = 50, pady = 20, rowspan = 5, sticky = "NSEW")
-redrawCanvas(drawFrame, True)
-
 openButton.configure(command = lambda : openSVG(textFrame, drawFrame, saveButton))
-app.bind("<ButtonRelease-1>", lambda event:redrawCanvas(drawFrame, False))
+app.bind("<ButtonRelease-1>", lambda event: threading.Thread(target=redrawCanvas, args=(drawFrame, False)).start())
 app.bind("<Configure>", lambda event: addTempScreen(drawFrame))
 
 
