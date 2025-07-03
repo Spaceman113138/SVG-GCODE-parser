@@ -3,6 +3,7 @@ from zlib_ng import zlib_ng
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2 as cv
 
 def readPNG(path: str):
     file = open(path, "rb")
@@ -48,13 +49,23 @@ def readPNG(path: str):
             if chunk["type"] == "PLTE":
                 pallet = parsePallet(chunk["data"])
 
-    pixleData = parseData(allData, channels, perRow, bitDepth, colorType, pallet)
+    pixleData = parseData(allData, channels, perRow, bitDepth, colorType, pallet, (width, height))
 
-    #print(reconstructedData)
-    fig, ax = plt.subplots()
-    ax.imshow(np.array(pixleData).reshape((height, width, 4)))
-    ax.set_facecolor("black")
+    #cv.imshow("image.png", arrayForm)
+    edges = cv.Canny(pixleData, 0, 300) # type: ignore
+
+    plt.subplot(121),plt.imshow(pixleData,cmap = 'gray') # type: ignore
+    plt.title('Original Image'), plt.xticks([]), plt.yticks([]) # type: ignore
+    plt.subplot(122),plt.imshow(edges,cmap = 'gray') # type: ignore
+    plt.title('Edge Image'), plt.xticks([]), plt.yticks([]) # type: ignore
+
     plt.show()
+
+    # #print(reconstructedData)
+    # fig, ax = plt.subplots()
+    # ax.imshow(arrayForm)
+    # ax.set_facecolor("black")
+    # plt.show()
 
 
 def parseBytesToInts(line:bytes, depth: int) -> list[int]:
@@ -97,7 +108,7 @@ def parseBytesToInts(line:bytes, depth: int) -> list[int]:
     return values 
 
 
-def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype, pallet):
+def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype, pallet, size):
     reconstructedLines: list[bytes] = reconstructData(data, int(channels), int(depth), int(bytesPerLine))
 
     combinedData: list[int] = []
@@ -111,43 +122,32 @@ def parseData(data: bytes, channels, bytesPerLine: int, depth, colortype, pallet
     pixleData = []
     match channels:
         case 4:
+            return np.array(combinedData, np.uint8).reshape((size[1], size[0], 4))
             while len(combinedData) > 0:
-                r,g,b,a = combinedData[0: 4]
-                combinedData = combinedData[4:]
-                r = int(r / adjustment)
-                g = int(g / adjustment)
-                b = int(b / adjustment)
-                a = int(a / adjustment)
+                print(len(combinedData))
+                pixleData.append(combinedData.pop(0))
 
-                pixleData.append([r,g,b,a])
+                # r,g,b,a = combinedData[0: 4]
+                # combinedData = combinedData[4:]
+                # r = int(r / adjustment)
+                # g = int(g / adjustment)
+                # b = int(b / adjustment)
+                # a = int(a / adjustment)
+
+                # pixleData.append([r,g,b,a])
 
         case 3:
-            while len(combinedData) > 0:
-                r,g,b, = combinedData[0: 3]
-                combinedData = combinedData[3:]
-                r = int(r * adjustment)
-                g = int(g * adjustment)
-                b = int(b * adjustment)
-
-                pixleData.append([r,g,b,255])
+            return np.array(combinedData, np.uint8).reshape((size[1], size[0], 3))
         case 2:
-            while len(combinedData) > 0:
-                w,a = combinedData[0:2]
-                combinedData = combinedData[2:]
-                w = int(w * adjustment)
-                a = int(a * adjustment)
-                
-                pixleData.append([w,w,w,a])
+            return np.array(combinedData, np.uint8).reshape((size[1], size[0], 2))
         case 1 if colortype == 0:
             while len(combinedData) > 0:
-                w = combinedData.pop(0)
-                w = int(w * adjustment)
-
-                pixleData.append([w,w,w,255])
+                return np.array(combinedData, np.uint8).reshape((size[1], size[0], 1))
         case 1 if colortype == 3:
             while len(combinedData) > 0:
                 index = combinedData.pop(0)
                 pixleData.append(pallet[index])
+            return np.array(pixleData, np.uint8).reshape((size[1], size[0], 4))
         case _:
             raise Exception("I should really implement this")
 
@@ -211,14 +211,12 @@ def reconstructData(data, channels: int, depth, bytesPerLine:int):
                     newLine += newValue.to_bytes(1)
                 reconstructedLines.append(newLine)
             case 3:
-                raise Exception("All wrong")
-                i = 0
-                while i < len(line):
+                for i in range(len(line)):
                     x = line[i]
-                    a = 0 if i < step else newLine[i - step]
+                    a = 0 if i < bpp else newLine[i - bpp]
                     b = 0 if len(reconstructedLines) == 0 else reconstructedLines[-1][i]
-                    newValue = x + math.floor((a + b) / 2) % 256
-                    newLine.append(newValue)
+                    newValue = (x + math.floor((a + b) / 2)) % 256
+                    newLine += newValue.to_bytes(1)
                     i += depthOffset
                 reconstructedLines.append(newLine)
             case 4:
@@ -310,8 +308,4 @@ def parseIDHR(idhrChunk: dict):
 
 
 
-
-
-
-
-readPNG("testPNG\\basn3p02.png")
+readPNG("testPNG\\defiltered.png")
