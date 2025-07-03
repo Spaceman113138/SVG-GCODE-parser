@@ -21,5 +21,6 @@ First download a copy of the repo
 
 # General
 
+- If you wnat to view your Gcode I've found https://ncviewer.com/ to be a great website for that
 - Please create an issue if there is a SVG that does not parse correctly so I can fix any bugs
 - I plan on adding support for other formats like PNG and JPEG in the future
